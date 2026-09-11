@@ -9,49 +9,59 @@ body {
 }
 
 a { color: inherit; text-decoration: none; }
-
 button, input, select { font: inherit; }
+button { cursor: pointer; }
 
 .container { width: min(1200px, calc(100% - 32px)); margin: 0 auto; }
 
-.header {
-  background: #172033;
-  color: white;
-  padding: 18px 0;
-}
-
+.header { background: #172033; color: white; padding: 18px 0; }
 .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
-
 .brand { font-size: 20px; font-weight: 700; }
-
 .nav { display: flex; gap: 18px; flex-wrap: wrap; }
-
 .nav a { color: #dce3f0; font-size: 14px; }
 
 main { padding: 36px 0; }
-
 .hero h1 { margin: 0 0 8px; font-size: 32px; }
 .hero p { margin: 0; color: #657084; }
 
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-top: 28px; }
-
 .card { background: white; border: 1px solid #e4e8ef; border-radius: 12px; padding: 20px; box-shadow: 0 4px 16px rgba(23,32,51,.05); }
 .card-label { color: #657084; font-size: 13px; }
 .card-value { display: block; margin-top: 8px; font-size: 28px; font-weight: 700; }
 
 .section { margin-top: 32px; }
 .section h2 { font-size: 20px; margin-bottom: 14px; }
-
 .department-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
 .department { background: white; border: 1px solid #e4e8ef; border-radius: 10px; padding: 16px; }
 
-@media (max-width: 800px) {
-  .grid { grid-template-columns: repeat(2, 1fr); }
+.employee-form { display: flex; flex-direction: column; gap: 18px; }
+.form-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.form-grid label { display: flex; flex-direction: column; gap: 7px; font-size: 13px; font-weight: 600; color: #39445a; }
+.form-grid input, .form-grid select { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #d5dce8; border-radius: 8px; background: #fff; color: #172033; outline: none; }
+.form-grid input:focus, .form-grid select:focus { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,.1); }
+.form-grid input:disabled { background: #eef1f6; color: #8a93a3; }
+.primary-button { align-self: flex-start; border: 0; border-radius: 8px; background: #2563eb; color: white; padding: 11px 18px; font-weight: 700; }
+.primary-button:hover { background: #1d4ed8; }
+.form-message { margin: 0; color: #2563eb; font-size: 14px; }
+.empty-state { color: #657084; }
+
+.table-wrapper { overflow-x: auto; background: white; border: 1px solid #e4e8ef; border-radius: 12px; box-shadow: 0 4px 16px rgba(23,32,51,.05); }
+table { width: 100%; min-width: 900px; border-collapse: collapse; }
+th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid #edf0f5; font-size: 13px; }
+th { background: #f8fafc; color: #526078; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+tr:last-child td { border-bottom: 0; }
+.danger-button { border: 1px solid #fecaca; border-radius: 7px; background: #fff; color: #dc2626; padding: 7px 10px; }
+.danger-button:hover { background: #fef2f2; }
+
+@media (max-width: 900px) {
+  .grid { grid-template-columns: repeat(2, 1fr) !important; }
+  .form-grid { grid-template-columns: repeat(2, 1fr); }
   .department-list { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {
   .header-inner { align-items: flex-start; flex-direction: column; }
-  .grid { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr !important; }
+  .form-grid { grid-template-columns: 1fr; }
   .hero h1 { font-size: 26px; }
 }
