@@ -41,13 +41,6 @@ function adicionarDias(data: string, quantidade: number) {
   return `${resultado.getFullYear()}-${String(resultado.getMonth() + 1).padStart(2, '0')}-${String(resultado.getDate()).padStart(2, '0')}`;
 }
 
-function calcularDias(inicio: string, fim: string) {
-  if (!inicio || !fim) return 0;
-  const a = new Date(`${inicio}T00:00:00`), b = new Date(`${fim}T00:00:00`);
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime()) || b < a) return 0;
-  return Math.floor((b.getTime() - a.getTime()) / 86400000) + 1;
-}
-
 function calcularEstado(inicio: string, fim: string): EstadoFerias {
   if (!inicio || !fim) return 'Disponível';
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
@@ -62,10 +55,13 @@ function calcularEstado(inicio: string, fim: string): EstadoFerias {
 
 function formatarData(data: string) { return data ? new Date(`${data}T00:00:00`).toLocaleDateString('pt-PT') : '—'; }
 
+const FORM_INICIAL: Funcionario = { processo: '', nome: '', contacto: '', departamento: 'Administração', tipoContrato: 'Permanente', admissao: '', fimContrato: '', diasUtilizados: 0, inicioFerias: '', fimFerias: '', historico: [] };
+
 export default function FuncionariosPage() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [carregado, setCarregado] = useState(false);
-  const [form, setForm] = useState<Funcionario>({ processo: '', nome: '', contacto: '', departamento: 'Administração', tipoContrato: 'Permanente', admissao: '', fimContrato: '', diasUtilizados: 0, inicioFerias: '', fimFerias: '', historico: [] });
+  const [form, setForm] = useState<Funcionario>(FORM_INICIAL);
+  const [processoEditando, setProcessoEditando] = useState<string | null>(null);
   const [mensagem, setMensagem] = useState('');
 
   useEffect(() => {
@@ -85,24 +81,51 @@ export default function FuncionariosPage() {
   const fimFeriasAutomatico = form.inicioFerias && form.diasUtilizados > 0 ? adicionarDias(form.inicioFerias, form.diasUtilizados) : '';
 
   function atualizarCampo(campo: keyof Funcionario, valor: string | number) {
-    setForm((atual) => ({ ...atual, [campo]: campo === 'fimFerias' ? fimFeriasAutomatico : valor }));
+    setForm((atual) => ({ ...atual, [campo]: valor }));
   }
 
-  function adicionarFuncionario(event: FormEvent<HTMLFormElement>) {
+  function iniciarEdicao(f: Funcionario) {
+    setProcessoEditando(f.processo);
+    setForm({ ...f, historico: [...(f.historico || [])] });
+    setMensagem(`A editar o funcionário ${f.processo}.`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function cancelarEdicao() {
+    setProcessoEditando(null);
+    setForm(FORM_INICIAL);
+    setMensagem('Edição cancelada.');
+  }
+
+  function guardarFuncionario(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setMensagem('');
-    if (!form.processo.trim() || !form.nome.trim() || !form.contacto.trim() || !form.admissao) return setMensagem('Preencha Número de processo, Nome, Contacto e Data de admissão.');
+    const processo = form.processo.trim();
+    if (!processo || !form.nome.trim() || !form.contacto.trim() || !form.admissao) return setMensagem('Preencha Número de processo, Nome, Contacto e Data de admissão.');
     if (form.tipoContrato === 'Contratado' && !form.fimContrato) return setMensagem('Para contrato Contratado, informe a data de fim do contrato.');
     if (form.diasUtilizados > 0 && !form.inicioFerias) return setMensagem('Informe a data de início das férias quando houver dias utilizados.');
-    if (funcionarios.some((item) => item.processo === form.processo.trim())) return setMensagem('Já existe um funcionário com este Número de processo.');
+    if (!processoEditando && funcionarios.some((item) => item.processo === processo)) return setMensagem('Já existe um funcionário com este Número de processo.');
 
     const fimFerias = form.inicioFerias && form.diasUtilizados > 0 ? adicionarDias(form.inicioFerias, form.diasUtilizados) : '';
-    const historico = form.inicioFerias && fimFerias && form.diasUtilizados > 0 ? [{ inicio: form.inicioFerias, fim: fimFerias, dias: form.diasUtilizados, estado: calcularEstado(form.inicioFerias, fimFerias) }] : [];
-    setFuncionarios((atuais) => [...atuais, { ...form, processo: form.processo.trim(), nome: form.nome.trim(), fimFerias, historico }]);
-    setMensagem('Funcionário adicionado com sucesso e guardado neste navegador.');
-    setForm((atual) => ({ ...atual, processo: '', nome: '', contacto: '', admissao: '', fimContrato: '', diasUtilizados: 0, inicioFerias: '', fimFerias: '', historico: [] }));
+    const dadosAtualizados: Funcionario = { ...form, processo, nome: form.nome.trim(), fimFerias };
+
+    if (processoEditando) {
+      setFuncionarios((atuais) => atuais.map((item) => item.processo === processoEditando ? { ...dadosAtualizados, processo: processoEditando, historico: item.historico || [] } : item));
+      setMensagem('Funcionário atualizado com sucesso. O histórico anterior foi preservado.');
+      setProcessoEditando(null);
+    } else {
+      const historico = form.inicioFerias && fimFerias && form.diasUtilizados > 0 ? [{ inicio: form.inicioFerias, fim: fimFerias, dias: form.diasUtilizados, estado: calcularEstado(form.inicioFerias, fimFerias) }] : [];
+      setFuncionarios((atuais) => [...atuais, { ...dadosAtualizados, historico }]);
+      setMensagem('Funcionário adicionado com sucesso e guardado neste navegador.');
+    }
+    setForm(FORM_INICIAL);
   }
 
-  function removerFuncionario(processo: string) { setFuncionarios((atuais) => atuais.filter((item) => item.processo !== processo)); }
+  function removerFuncionario(processo: string) {
+    if (!window.confirm(`Tem certeza que deseja remover o funcionário ${processo}? Esta ação também remove o histórico guardado neste navegador.`)) return;
+    setFuncionarios((atuais) => atuais.filter((item) => item.processo !== processo));
+    if (processoEditando === processo) cancelarEdicao();
+    setMensagem(`Funcionário ${processo} removido.`);
+  }
 
   return <main><div className="container">
     <div className="hero"><h1>Funcionários</h1><p>Cadastro central dos funcionários e controle automático de férias.</p></div>
@@ -112,9 +135,9 @@ export default function FuncionariosPage() {
       <div className="card"><span className="card-label">Contratados</span><strong className="card-value">{total - permanentes}</strong></div>
     </div>
 
-    <section className="section"><h2>Novo funcionário</h2><form onSubmit={adicionarFuncionario} className="card employee-form">
+    <section className="section"><h2>{processoEditando ? `Editar funcionário — Processo ${processoEditando}` : 'Novo funcionário'}</h2><form onSubmit={guardarFuncionario} className="card employee-form">
       <div className="form-grid">
-        <label>Número de processo<input value={form.processo} onChange={(e) => atualizarCampo('processo', e.target.value)} placeholder="Ex.: 0025" /></label>
+        <label>Número de processo<input value={form.processo} onChange={(e) => atualizarCampo('processo', e.target.value)} placeholder="Ex.: 0025" disabled={Boolean(processoEditando)} /></label>
         <label>Nome<input value={form.nome} onChange={(e) => atualizarCampo('nome', e.target.value)} placeholder="Nome completo" /></label>
         <label>Contacto<input value={form.contacto} onChange={(e) => atualizarCampo('contacto', e.target.value)} placeholder="Telefone" /></label>
         <label>Departamento<select value={form.departamento} onChange={(e) => atualizarCampo('departamento', e.target.value)}>{DEPARTAMENTOS.map((d) => <option key={d}>{d}</option>)}</select></label>
@@ -126,11 +149,11 @@ export default function FuncionariosPage() {
         <label>Fim das férias (automático)<input type="date" value={fimFeriasAutomatico} readOnly disabled={!fimFeriasAutomatico} /></label>
       </div>
       <div className="vacation-preview"><strong>Resumo de férias</strong><span>Direito acumulado: {calcularDireito(form)} dias</span><span>Anos contabilizados: {calcularAnosDireito(form) || '—'}</span><span>Restantes: {Math.max(0, calcularDireito(form) - form.diasUtilizados)} dias</span><span>Período: {form.inicioFerias ? `${formatarData(form.inicioFerias)} – ${formatarData(fimFeriasAutomatico)}` : '—'}</span><span>Estado: {calcularEstado(form.inicioFerias, fimFeriasAutomatico)}</span></div>
-      <button className="primary-button" type="submit">Adicionar funcionário</button>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><button className="primary-button" type="submit">{processoEditando ? 'Guardar alterações' : 'Adicionar funcionário'}</button>{processoEditando && <button className="secondary-button" type="button" onClick={cancelarEdicao}>Cancelar edição</button>}</div>
       {mensagem && <p className="form-message">{mensagem}</p>}
     </form></section>
 
-    <section className="section"><h2>Registo de funcionários</h2>{funcionarios.length === 0 ? <div className="card empty-state">Ainda não existem funcionários cadastrados.</div> : <div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Contacto</th><th>Departamento</th><th>Contrato</th><th>Direito acumulado</th><th>Utilizados</th><th>Restantes</th><th>Férias</th><th>Estado</th><th>Ações</th></tr></thead><tbody>{funcionarios.map((f) => { const direito = calcularDireito(f), restantes = Math.max(0, direito - f.diasUtilizados), estado = calcularEstado(f.inicioFerias, f.fimFerias); return <tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{f.contacto}</td><td>{f.departamento}</td><td>{f.tipoContrato}</td><td>{direito} dias</td><td>{f.diasUtilizados} dias</td><td><strong>{restantes} dias</strong></td><td>{f.inicioFerias ? `${formatarData(f.inicioFerias)} – ${formatarData(f.fimFerias)}` : '—'}</td><td>{estado}</td><td><button className="danger-button" type="button" onClick={() => removerFuncionario(f.processo)}>Remover</button></td></tr>; })}</tbody></table></div>}</section>
+    <section className="section"><h2>Registo de funcionários</h2>{funcionarios.length === 0 ? <div className="card empty-state">Ainda não existem funcionários cadastrados.</div> : <div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Contacto</th><th>Departamento</th><th>Contrato</th><th>Direito acumulado</th><th>Utilizados</th><th>Restantes</th><th>Férias</th><th>Estado</th><th>Ações</th></tr></thead><tbody>{funcionarios.map((f) => { const direito = calcularDireito(f), restantes = Math.max(0, direito - f.diasUtilizados), estado = calcularEstado(f.inicioFerias, f.fimFerias); return <tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{f.contacto}</td><td>{f.departamento}</td><td>{f.tipoContrato}</td><td>{direito} dias</td><td>{f.diasUtilizados} dias</td><td><strong>{restantes} dias</strong></td><td>{f.inicioFerias ? `${formatarData(f.inicioFerias)} – ${formatarData(f.fimFerias)}` : '—'}</td><td>{estado}</td><td><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button className="secondary-button" type="button" onClick={() => iniciarEdicao(f)}>Editar</button><button className="danger-button" type="button" onClick={() => removerFuncionario(f.processo)}>Remover</button></div></td></tr>; })}</tbody></table></div>}</section>
 
     <section className="section"><h2>Histórico de férias</h2>{funcionarios.length === 0 ? <div className="card empty-state">O histórico aparecerá aqui quando houver férias registadas.</div> : <div className="history-list">{funcionarios.map((f) => <div className="card" key={f.processo}><strong>Processo {f.processo} — {f.nome}</strong>{f.historico.length === 0 ? <p>Sem histórico de férias registado.</p> : <div className="table-wrapper"><table><thead><tr><th>Início</th><th>Fim</th><th>Dias</th><th>Estado</th></tr></thead><tbody>{f.historico.map((item, index) => <tr key={`${f.processo}-${index}`}><td>{formatarData(item.inicio)}</td><td>{formatarData(item.fim)}</td><td>{item.dias}</td><td>{item.estado}</td></tr>)}</tbody></table></div>}</div>)}</div>}</section>
 
