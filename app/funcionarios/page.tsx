@@ -15,14 +15,11 @@ function calcularDireito(f: Funcionario) {
   if (!f.admissao) return 0;
   const inicio = new Date(`${f.admissao}T00:00:00`);
   if (Number.isNaN(inicio.getTime())) return 0;
-
   if (f.tipoContrato === 'Permanente') {
     const anoInicio = Math.max(inicio.getFullYear(), ANO_INICIAL_FERIAS);
     const anoAtual = new Date().getFullYear();
-    const anosContabilizados = Math.max(0, anoAtual - anoInicio + 1);
-    return anosContabilizados * 30;
+    return Math.max(0, anoAtual - anoInicio + 1) * 30;
   }
-
   if (!f.fimContrato) return 0;
   const fim = new Date(`${f.fimContrato}T00:00:00`);
   if (Number.isNaN(fim.getTime()) || fim < inicio) return 0;
@@ -35,6 +32,13 @@ function calcularAnosDireito(f: Funcionario) {
   const inicio = new Date(`${f.admissao}T00:00:00`);
   if (Number.isNaN(inicio.getTime())) return 0;
   return Math.max(0, new Date().getFullYear() - Math.max(inicio.getFullYear(), ANO_INICIAL_FERIAS) + 1);
+}
+
+function adicionarDias(data: string, quantidade: number) {
+  if (!data || quantidade <= 0) return '';
+  const resultado = new Date(`${data}T00:00:00`);
+  resultado.setDate(resultado.getDate() + quantidade - 1);
+  return `${resultado.getFullYear()}-${String(resultado.getMonth() + 1).padStart(2, '0')}-${String(resultado.getDate()).padStart(2, '0')}`;
 }
 
 function calcularDias(inicio: string, fim: string) {
@@ -78,19 +82,22 @@ export default function FuncionariosPage() {
 
   const total = funcionarios.length;
   const permanentes = useMemo(() => funcionarios.filter((item) => item.tipoContrato === 'Permanente').length, [funcionarios]);
+  const fimFeriasAutomatico = form.inicioFerias && form.diasUtilizados > 0 ? adicionarDias(form.inicioFerias, form.diasUtilizados) : '';
 
-  function atualizarCampo(campo: keyof Funcionario, valor: string | number) { setForm((atual) => ({ ...atual, [campo]: valor })); }
+  function atualizarCampo(campo: keyof Funcionario, valor: string | number) {
+    setForm((atual) => ({ ...atual, [campo]: campo === 'fimFerias' ? fimFeriasAutomatico : valor }));
+  }
 
   function adicionarFuncionario(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setMensagem('');
     if (!form.processo.trim() || !form.nome.trim() || !form.contacto.trim() || !form.admissao) return setMensagem('Preencha Número de processo, Nome, Contacto e Data de admissão.');
     if (form.tipoContrato === 'Contratado' && !form.fimContrato) return setMensagem('Para contrato Contratado, informe a data de fim do contrato.');
-    if (form.inicioFerias && !form.fimFerias) return setMensagem('Informe o fim das férias.');
-    if (form.fimFerias && !form.inicioFerias) return setMensagem('Informe o início das férias antes do fim das férias.');
-    if (form.inicioFerias && form.fimFerias && form.fimFerias < form.inicioFerias) return setMensagem('O fim das férias não pode ser anterior ao início.');
+    if (form.diasUtilizados > 0 && !form.inicioFerias) return setMensagem('Informe a data de início das férias quando houver dias utilizados.');
     if (funcionarios.some((item) => item.processo === form.processo.trim())) return setMensagem('Já existe um funcionário com este Número de processo.');
-    const historico = form.inicioFerias && form.fimFerias ? [{ inicio: form.inicioFerias, fim: form.fimFerias, dias: calcularDias(form.inicioFerias, form.fimFerias), estado: calcularEstado(form.inicioFerias, form.fimFerias) }] : [];
-    setFuncionarios((atuais) => [...atuais, { ...form, processo: form.processo.trim(), nome: form.nome.trim(), historico }]);
+
+    const fimFerias = form.inicioFerias && form.diasUtilizados > 0 ? adicionarDias(form.inicioFerias, form.diasUtilizados) : '';
+    const historico = form.inicioFerias && fimFerias && form.diasUtilizados > 0 ? [{ inicio: form.inicioFerias, fim: fimFerias, dias: form.diasUtilizados, estado: calcularEstado(form.inicioFerias, fimFerias) }] : [];
+    setFuncionarios((atuais) => [...atuais, { ...form, processo: form.processo.trim(), nome: form.nome.trim(), fimFerias, historico }]);
     setMensagem('Funcionário adicionado com sucesso e guardado neste navegador.');
     setForm((atual) => ({ ...atual, processo: '', nome: '', contacto: '', admissao: '', fimContrato: '', diasUtilizados: 0, inicioFerias: '', fimFerias: '', historico: [] }));
   }
@@ -114,11 +121,11 @@ export default function FuncionariosPage() {
         <label>Tipo de contrato<select value={form.tipoContrato} onChange={(e) => atualizarCampo('tipoContrato', e.target.value as TipoContrato)}><option>Permanente</option><option>Contratado</option></select></label>
         <label>Data de admissão<input type="date" value={form.admissao} onChange={(e) => atualizarCampo('admissao', e.target.value)} /></label>
         <label>Fim do contrato<input type="date" value={form.fimContrato} onChange={(e) => atualizarCampo('fimContrato', e.target.value)} disabled={form.tipoContrato === 'Permanente'} /></label>
-        <label>Dias utilizados<input type="number" min="0" value={form.diasUtilizados} onChange={(e) => atualizarCampo('diasUtilizados', Number(e.target.value))} /></label>
+        <label>Dias utilizados<input type="number" min="0" value={form.diasUtilizados} onChange={(e) => atualizarCampo('diasUtilizados', Number(e.target.value))} placeholder="Ex.: 5" /></label>
         <label>Início das férias<input type="date" value={form.inicioFerias} onChange={(e) => atualizarCampo('inicioFerias', e.target.value)} /></label>
-        <label>Fim das férias<input type="date" value={form.fimFerias} onChange={(e) => atualizarCampo('fimFerias', e.target.value)} /></label>
+        <label>Fim das férias (automático)<input type="date" value={fimFeriasAutomatico} readOnly disabled={!fimFeriasAutomatico} /></label>
       </div>
-      <div className="vacation-preview"><strong>Resumo de férias</strong><span>Direito acumulado: {calcularDireito(form)} dias</span><span>Anos contabilizados: {calcularAnosDireito(form) || '—'}</span><span>Restantes: {Math.max(0, calcularDireito(form) - form.diasUtilizados)} dias</span><span>Estado: {calcularEstado(form.inicioFerias, form.fimFerias)}</span></div>
+      <div className="vacation-preview"><strong>Resumo de férias</strong><span>Direito acumulado: {calcularDireito(form)} dias</span><span>Anos contabilizados: {calcularAnosDireito(form) || '—'}</span><span>Restantes: {Math.max(0, calcularDireito(form) - form.diasUtilizados)} dias</span><span>Período: {form.inicioFerias ? `${formatarData(form.inicioFerias)} – ${formatarData(fimFeriasAutomatico)}` : '—'}</span><span>Estado: {calcularEstado(form.inicioFerias, fimFeriasAutomatico)}</span></div>
       <button className="primary-button" type="submit">Adicionar funcionário</button>
       {mensagem && <p className="form-message">{mensagem}</p>}
     </form></section>
@@ -127,6 +134,6 @@ export default function FuncionariosPage() {
 
     <section className="section"><h2>Histórico de férias</h2>{funcionarios.length === 0 ? <div className="card empty-state">O histórico aparecerá aqui quando houver férias registadas.</div> : <div className="history-list">{funcionarios.map((f) => <div className="card" key={f.processo}><strong>Processo {f.processo} — {f.nome}</strong>{f.historico.length === 0 ? <p>Sem histórico de férias registado.</p> : <div className="table-wrapper"><table><thead><tr><th>Início</th><th>Fim</th><th>Dias</th><th>Estado</th></tr></thead><tbody>{f.historico.map((item, index) => <tr key={`${f.processo}-${index}`}><td>{formatarData(item.inicio)}</td><td>{formatarData(item.fim)}</td><td>{item.dias}</td><td>{item.estado}</td></tr>)}</tbody></table></div>}</div>)}</div>}</section>
 
-    <section className="section"><h2>Regra de férias</h2><div className="department-list"><div className="department"><strong>Permanente</strong><br />30 dias de férias por cada ano contabilizado, acumulando automaticamente o saldo de um ano para o outro.<br />O cálculo começa no ano 2000.</div><div className="department"><strong>Contratado</strong><br />1 dia de férias por cada mês de contrato.</div></div></section>
+    <section className="section"><h2>Regra de férias</h2><div className="department-list"><div className="department"><strong>Permanente</strong><br />30 dias de férias por cada ano contabilizado, acumulando automaticamente o saldo de um ano para o outro.<br />O cálculo começa no ano 2000.</div><div className="department"><strong>Contratado</strong><br />1 dia de férias por cada mês de contrato.</div><div className="department"><strong>Data de fim das férias</strong><br />É calculada automaticamente a partir da data de início e dos dias utilizados. O utilizador não precisa digitar o fim.</div></div></section>
   </div></main>;
 }
