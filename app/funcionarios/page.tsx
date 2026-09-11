@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 
 const DEPARTAMENTOS = ['Administração', 'Serração', 'Vendas', 'Carpintaria', 'Manutenção', 'Mecânica', 'Seguranças'];
+const ANO_INICIAL_FERIAS = 2000;
 type TipoContrato = 'Permanente' | 'Contratado';
 type EstadoFerias = 'Disponível' | 'Férias próximas' | 'Em férias' | 'Férias terminadas' | 'Férias vencidas';
 type HistoricoFerias = { inicio: string; fim: string; dias: number; estado: EstadoFerias };
@@ -11,13 +12,29 @@ type Funcionario = { processo: string; nome: string; contacto: string; departame
 const CHAVE_STORAGE = 'controle-ferias-rh-funcionarios';
 
 function calcularDireito(f: Funcionario) {
-  if (f.tipoContrato === 'Permanente') return 30;
-  if (!f.admissao || !f.fimContrato) return 0;
+  if (!f.admissao) return 0;
   const inicio = new Date(`${f.admissao}T00:00:00`);
+  if (Number.isNaN(inicio.getTime())) return 0;
+
+  if (f.tipoContrato === 'Permanente') {
+    const anoInicio = Math.max(inicio.getFullYear(), ANO_INICIAL_FERIAS);
+    const anoAtual = new Date().getFullYear();
+    const anosContabilizados = Math.max(0, anoAtual - anoInicio + 1);
+    return anosContabilizados * 30;
+  }
+
+  if (!f.fimContrato) return 0;
   const fim = new Date(`${f.fimContrato}T00:00:00`);
-  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime()) || fim < inicio) return 0;
+  if (Number.isNaN(fim.getTime()) || fim < inicio) return 0;
   const meses = (fim.getFullYear() - inicio.getFullYear()) * 12 + (fim.getMonth() - inicio.getMonth()) + (fim.getDate() >= inicio.getDate() ? 0 : -1) + 1;
   return Math.max(0, meses);
+}
+
+function calcularAnosDireito(f: Funcionario) {
+  if (f.tipoContrato !== 'Permanente' || !f.admissao) return 0;
+  const inicio = new Date(`${f.admissao}T00:00:00`);
+  if (Number.isNaN(inicio.getTime())) return 0;
+  return Math.max(0, new Date().getFullYear() - Math.max(inicio.getFullYear(), ANO_INICIAL_FERIAS) + 1);
 }
 
 function calcularDias(inicio: string, fim: string) {
@@ -101,15 +118,15 @@ export default function FuncionariosPage() {
         <label>Início das férias<input type="date" value={form.inicioFerias} onChange={(e) => atualizarCampo('inicioFerias', e.target.value)} /></label>
         <label>Fim das férias<input type="date" value={form.fimFerias} onChange={(e) => atualizarCampo('fimFerias', e.target.value)} /></label>
       </div>
-      <div className="vacation-preview"><strong>Resumo de férias</strong><span>Direito: {calcularDireito(form)} dias</span><span>Restantes: {Math.max(0, calcularDireito(form) - form.diasUtilizados)} dias</span><span>Estado: {calcularEstado(form.inicioFerias, form.fimFerias)}</span></div>
+      <div className="vacation-preview"><strong>Resumo de férias</strong><span>Direito acumulado: {calcularDireito(form)} dias</span><span>Anos contabilizados: {calcularAnosDireito(form) || '—'}</span><span>Restantes: {Math.max(0, calcularDireito(form) - form.diasUtilizados)} dias</span><span>Estado: {calcularEstado(form.inicioFerias, form.fimFerias)}</span></div>
       <button className="primary-button" type="submit">Adicionar funcionário</button>
       {mensagem && <p className="form-message">{mensagem}</p>}
     </form></section>
 
-    <section className="section"><h2>Registo de funcionários</h2>{funcionarios.length === 0 ? <div className="card empty-state">Ainda não existem funcionários cadastrados.</div> : <div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Contacto</th><th>Departamento</th><th>Contrato</th><th>Direito</th><th>Utilizados</th><th>Restantes</th><th>Férias</th><th>Estado</th><th>Ações</th></tr></thead><tbody>{funcionarios.map((f) => { const direito = calcularDireito(f), restantes = Math.max(0, direito - f.diasUtilizados), estado = calcularEstado(f.inicioFerias, f.fimFerias); return <tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{f.contacto}</td><td>{f.departamento}</td><td>{f.tipoContrato}</td><td>{direito} dias</td><td>{f.diasUtilizados} dias</td><td><strong>{restantes} dias</strong></td><td>{f.inicioFerias ? `${formatarData(f.inicioFerias)} – ${formatarData(f.fimFerias)}` : '—'}</td><td>{estado}</td><td><button className="danger-button" type="button" onClick={() => removerFuncionario(f.processo)}>Remover</button></td></tr>; })}</tbody></table></div>}</section>
+    <section className="section"><h2>Registo de funcionários</h2>{funcionarios.length === 0 ? <div className="card empty-state">Ainda não existem funcionários cadastrados.</div> : <div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Contacto</th><th>Departamento</th><th>Contrato</th><th>Direito acumulado</th><th>Utilizados</th><th>Restantes</th><th>Férias</th><th>Estado</th><th>Ações</th></tr></thead><tbody>{funcionarios.map((f) => { const direito = calcularDireito(f), restantes = Math.max(0, direito - f.diasUtilizados), estado = calcularEstado(f.inicioFerias, f.fimFerias); return <tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{f.contacto}</td><td>{f.departamento}</td><td>{f.tipoContrato}</td><td>{direito} dias</td><td>{f.diasUtilizados} dias</td><td><strong>{restantes} dias</strong></td><td>{f.inicioFerias ? `${formatarData(f.inicioFerias)} – ${formatarData(f.fimFerias)}` : '—'}</td><td>{estado}</td><td><button className="danger-button" type="button" onClick={() => removerFuncionario(f.processo)}>Remover</button></td></tr>; })}</tbody></table></div>}</section>
 
     <section className="section"><h2>Histórico de férias</h2>{funcionarios.length === 0 ? <div className="card empty-state">O histórico aparecerá aqui quando houver férias registadas.</div> : <div className="history-list">{funcionarios.map((f) => <div className="card" key={f.processo}><strong>Processo {f.processo} — {f.nome}</strong>{f.historico.length === 0 ? <p>Sem histórico de férias registado.</p> : <div className="table-wrapper"><table><thead><tr><th>Início</th><th>Fim</th><th>Dias</th><th>Estado</th></tr></thead><tbody>{f.historico.map((item, index) => <tr key={`${f.processo}-${index}`}><td>{formatarData(item.inicio)}</td><td>{formatarData(item.fim)}</td><td>{item.dias}</td><td>{item.estado}</td></tr>)}</tbody></table></div>}</div>)}</div>}</section>
 
-    <section className="section"><h2>Regra de férias</h2><div className="department-list"><div className="department"><strong>Permanente</strong><br />30 dias de férias por ano.</div><div className="department"><strong>Contratado</strong><br />1 dia de férias por cada mês de contrato.</div></div></section>
+    <section className="section"><h2>Regra de férias</h2><div className="department-list"><div className="department"><strong>Permanente</strong><br />30 dias de férias por cada ano contabilizado, acumulando automaticamente o saldo de um ano para o outro.<br />O cálculo começa no ano 2000.</div><div className="department"><strong>Contratado</strong><br />1 dia de férias por cada mês de contrato.</div></div></section>
   </div></main>;
 }
