@@ -1,6 +1,7 @@
 const { app, BrowserWindow } = require('electron');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
+const { randomBytes } = require('node:crypto');
 
 let server;
 
@@ -8,6 +9,8 @@ function startServer() {
   const appDir = path.join(process.resourcesPath, 'app');
   const nodeExe = path.join(process.resourcesPath, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
   const serverFile = path.join(appDir, 'server.js');
+  const userDataDir = app.getPath('userData');
+  const sessionSecret = randomBytes(48).toString('hex');
 
   server = spawn(nodeExe, [serverFile], {
     cwd: appDir,
@@ -17,7 +20,8 @@ function startServer() {
       PORT: '3000',
       HOSTNAME: '127.0.0.1',
       DATABASE_MODE: 'local',
-      LOCAL_DATABASE_PATH: path.join(app.getPath('userData'), 'data', 'controle-ferias.sqlite')
+      LOCAL_DATABASE_PATH: path.join(userDataDir, 'data', 'controle-ferias.sqlite'),
+      SESSION_SECRET: sessionSecret
     },
     windowsHide: true,
     stdio: 'ignore'
