@@ -6,12 +6,16 @@ let server;
 
 function startServer() {
   const appDir = path.join(process.resourcesPath, 'app');
-  const nextBin = path.join(appDir, 'node_modules', 'next', 'dist', 'bin', 'next');
-  server = spawn(process.execPath, [nextBin, 'start', '-p', '3000'], {
+  const nodeExe = path.join(process.resourcesPath, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
+  const serverFile = path.join(appDir, 'server.js');
+
+  server = spawn(nodeExe, [serverFile], {
     cwd: appDir,
     env: {
       ...process.env,
       NODE_ENV: 'production',
+      PORT: '3000',
+      HOSTNAME: '127.0.0.1',
       DATABASE_MODE: 'local',
       LOCAL_DATABASE_PATH: path.join(app.getPath('userData'), 'data', 'controle-ferias.sqlite')
     },
