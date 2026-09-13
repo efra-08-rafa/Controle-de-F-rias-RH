@@ -1,0 +1,67 @@
+name: Windows Installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    env:
+      DATABASE_MODE: local
+      LOCAL_DATABASE_PATH: ./data/ci.sqlite
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build Next.js
+        run: npm run build
+
+      - name: Prepare standalone application
+        shell: pwsh
+        run: |
+          if (Test-Path .next/standalone/.next/static) { Remove-Item -Recurse -Force .next/standalone/.next/static }
+          New-Item -ItemType Directory -Force .next/standalone/.next/static | Out-Null
+          Copy-Item -Recurse -Force .next/static/* .next/standalone/.next/static/
+
+          if (Test-Path .next/standalone/public) { Remove-Item -Recurse -Force .next/standalone/public }
+          if (Test-Path public) {
+            Copy-Item -Recurse -Force public .next/standalone/public
+          }
+
+          if (Test-Path .next/standalone/database) { Remove-Item -Recurse -Force .next/standalone/database }
+          Copy-Item -Recurse -Force database .next/standalone/database
+
+      - name: Download Node.js runtime
+        shell: pwsh
+        run: |
+          $version = '24.8.0'
+          $url = "https://nodejs.org/dist/v$version/node-v$version-win-x64.zip"
+          $zip = Join-Path $env:RUNNER_TEMP 'node-runtime.zip'
+          $dir = Join-Path $env:GITHUB_WORKSPACE 'installer-runtime'
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Expand-Archive -Path $zip -DestinationPath $env:RUNNER_TEMP/node-extract -Force
+          New-Item -ItemType Directory -Force "$dir/node" | Out-Null
+          Copy-Item "$env:RUNNER_TEMP/node-extract/node-v$version-win-x64/node.exe" "$dir/node/node.exe"
+
+      - name: Build Windows installer
+        run: npx electron-builder --win nsis
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Controle-de-Ferias-RH-Windows
+          path: dist/Controle-de-Ferias-RH-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14
