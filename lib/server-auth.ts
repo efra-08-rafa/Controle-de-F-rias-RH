@@ -31,7 +31,17 @@ async function garantirUtilizadoresIniciais(){
   {login:process.env.OUTRO_USER_ID||'ifloma',nome:'Outro utilizador',papel:'Outro' as const,password:process.env.OUTRO_PASSWORD||''},
  ];
  if(contas.some(c=>!c.password)) return;
- await withTransaction(async client=>{for(const conta of contas){const existente=await client.query<{id:string}>('select id from utilizadores where lower(login)=lower($1) and papel=$2 limit 1',[conta.login.trim(),conta.papel]);if(!existente.rows[0])await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,atualizado_em) values($1,$2,$3,$4,$5,1,CURRENT_TIMESTAMP)',[randomUUID(),conta.login.trim(),conta.nome,conta.papel,hashPassword(conta.password)]);}});
+ await withTransaction(async client=>{
+  for(const conta of contas){
+   const login=conta.login.trim();
+   const existente=await client.query<{id:string;password_hash:string}>('select id,password_hash from utilizadores where lower(login)=lower($1) and papel=$2 limit 1',[login,conta.papel]);
+   if(!existente.rows[0]){
+    await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,atualizado_em) values($1,$2,$3,$4,$5,1,CURRENT_TIMESTAMP)',[randomUUID(),login,conta.nome,conta.papel,hashPassword(conta.password)]);
+   }else if(!verifyPassword(conta.password,existente.rows[0].password_hash)){
+    await client.query('update utilizadores set login=$1,nome=$2,password_hash=$3,ativo=1,atualizado_em=CURRENT_TIMESTAMP where id=$4',[login,conta.nome,hashPassword(conta.password),existente.rows[0].id]);
+   }
+  }
+ });
 }
 
 export async function autenticar(id:string,password:string){await garantirUtilizadoresIniciais();const login=id.trim().toLowerCase();const result=await dbQuery<{id:string;login:string;nome:string;papel:Papel;password_hash:string;ativo:boolean}>('select id,login,nome,papel,password_hash,ativo from utilizadores where lower(login)=lower($1) and ativo=true',[login]);const conta=result.rows.find(c=>verifyPassword(password,c.password_hash));return conta||null;}
