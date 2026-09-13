@@ -1,5 +1,6 @@
 import 'server-only';
 import { cookies } from 'next/headers';
+import { NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export type Papel = 'Administrador' | 'RH' | 'Outro';
@@ -83,7 +84,6 @@ export async function exigirPapel(...papeis: Papel[]) {
 }
 
 export function respostaAutorizacao(error: unknown) {
-  const { NextResponse } = require('next/server') as typeof import('next/server');
   if (error instanceof Error && error.message === 'FORBIDDEN') return NextResponse.json({ ok: false, erro: 'Sem permissão para esta operação.' }, { status: 403 });
   return NextResponse.json({ ok: false, erro: 'Sessão inválida ou expirada.' }, { status: 401 });
 }
