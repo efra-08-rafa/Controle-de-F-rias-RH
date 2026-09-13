@@ -34,7 +34,16 @@ export function localRun(sql: string, params: unknown[] = []) {
 }
 
 export function localTransaction<T>(fn: (database: Database.Database) => T) {
-  return getLocalDb().transaction(fn)();
+  const database = getLocalDb();
+  database.exec('BEGIN');
+  try {
+    const result = fn(database);
+    database.exec('COMMIT');
+    return result;
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
 }
 
 export function verificarDbLocal() {
