@@ -1,4 +1,9 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {getSessao,terminarSessao,Sessao} from '../lib/auth';
-export default function AuthGuard({children}:{children:React.ReactNode}){const[sessao,setSessao]=useState<Sessao|null>(null);const[ready,setReady]=useState(false);useEffect(()=>{if(window.location.pathname==='/login'){setReady(true);return;}const s=getSessao();if(!s){window.location.href='/login';return;}const p=s.permissoes;const path=window.location.pathname;const permitido=path.startsWith('/funcionarios')?p.funcionarios:path.startsWith('/ferias')?p.ferias:path.startsWith('/departamentos')?p.departamentos:path.startsWith('/relatorios')?p.relatorios:path.startsWith('/configuracoes/utilizadores')?p.utilizadores:path.startsWith('/configuracoes')?p.configuracoes:p.painel;if(!permitido){window.location.href='/';return;}setSessao(s);setReady(true);},[]);if(!ready)return null;if(!sessao)return <>{children}</>;return <>{children}<div className="session-bar"><span><strong>{sessao.nome}</strong> · {sessao.papel}</span><button onClick={()=>{terminarSessao();window.location.href='/login'}}>Sair</button></div></>}
+
+export default function AuthGuard({children}:{children:React.ReactNode}){
+ const[ready,setReady]=useState(false);
+ useEffect(()=>{setReady(true);},[]);
+ if(!ready)return null;
+ return <>{children}</>;
+}
