@@ -58,7 +58,8 @@ export async function POST(request: Request) {
     const body = await request.json() as { eventos?: Envelope[] }; const eventos = Array.isArray(body.eventos) ? body.eventos : []; if (eventos.length > 100) return NextResponse.json({ok:false,erro:'Lote demasiado grande.'},{status:400}); const resultados=[];
     for (const item of eventos) {
       const operacaoId=text(item.operacaoId),dispositivoId=text(item.dispositivoId),versaoLocal=item.versaoLocal;
-      if(!operacaoId||!dispositivoId||!item.entidade||!item.entidadeId||!item.operacao||!Number.isInteger(versaoLocal)){resultados.push({operacaoId:operacaoId||null,status:'ERRO',mensagem:'Evento de sincronização inválido.'});continue;}
+      const versaoValida = typeof versaoLocal === 'number' && Number.isInteger(versaoLocal);
+      if(!operacaoId||!dispositivoId||!item.entidade||!item.entidadeId||!item.operacao||!versaoValida){resultados.push({operacaoId:operacaoId||null,status:'ERRO',mensagem:'Evento de sincronização inválido.'});continue;}
       const evento: EventoValido = { operacaoId, dispositivoId, entidade: item.entidade, entidadeId: item.entidadeId, operacao: item.operacao, versaoLocal, payload: item.payload };
       if(item.entidade==='utilizador'&&sessao.papel!=='Administrador'){resultados.push({operacaoId,status:'ERRO',mensagem:'Sem permissão para sincronizar utilizadores.'});continue;}
       try { const existente=await dbQuery<{status:string}>('select status from sincronizacao_eventos where operacao_id=$1 limit 1',[operacaoId]); if(existente.rows[0]){resultados.push({operacaoId,status:existente.rows[0].status==='CONFLITO'?'CONFLITO':'PROCESSADO'});continue;} const result=await withTransaction(client=>aplicarEvento(client,evento,sessao)); resultados.push({operacaoId,...result}); }
