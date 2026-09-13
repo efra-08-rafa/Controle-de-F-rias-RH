@@ -5,8 +5,10 @@ import { getLocalDb } from './local-db';
 
 let pool: Pool | undefined;
 
-type LocalResult<T> = { rows: T[]; rowCount: number };
-type LocalClient = { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values?: unknown[]) => Promise<LocalResult<T>>; release: () => void };
+type DbResult<T> = { rows: T[]; rowCount: number };
+export type DbClient = { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values?: unknown[]) => Promise<DbResult<T>> };
+
+type LocalResult<T> = DbResult<T>;
 
 function modoLocal() { return (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local'; }
 function getDatabaseUrl() {
@@ -44,11 +46,15 @@ export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: s
   return (getDb() as Pool).query<T>(text, values);
 }
 
-function localClient(): LocalClient {
-  return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => localQuery<T>(sql, values), release: () => undefined };
+function localClient(): DbClient {
+  return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => localQuery<T>(sql, values) };
 }
 
-export async function withTransaction<T>(fn: (client: PoolClient | LocalClient) => Promise<T>) {
+function postgresClient(client: PoolClient): DbClient {
+  return { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => client.query<T>(sql, values) };
+}
+
+export async function withTransaction<T>(fn: (client: DbClient) => Promise<T>) {
   if (modoLocal()) {
     const database = getLocalDb();
     database.exec('BEGIN');
@@ -64,7 +70,7 @@ export async function withTransaction<T>(fn: (client: PoolClient | LocalClient) 
   const client = await (getDb() as Pool).connect();
   try {
     await client.query('BEGIN');
-    const result = await fn(client);
+    const result = await fn(postgresClient(client));
     await client.query('COMMIT');
     return result;
   } catch (error) {
@@ -76,7 +82,10 @@ export async function withTransaction<T>(fn: (client: PoolClient | LocalClient) 
 }
 
 export async function verificarDb() {
-  if (modoLocal()) return String(getLocalDb().prepare("select datetime('now') as agora").get()?.agora ?? '');
+  if (modoLocal()) {
+    const row = getLocalDb().prepare("select datetime('now') as agora").get() as { agora?: string } | undefined;
+    return row?.agora ?? null;
+  }
   const result = await dbQuery<{ agora: string }>('select now() as agora');
   return result.rows[0]?.agora ?? null;
 }
