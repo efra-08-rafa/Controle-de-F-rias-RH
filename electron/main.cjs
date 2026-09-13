@@ -5,8 +5,8 @@ const path = require('node:path');
 let server;
 
 function startServer() {
-  const nextBin = path.join(process.resourcesPath, 'app', 'node_modules', 'next', 'dist', 'bin', 'next');
   const appDir = path.join(process.resourcesPath, 'app');
+  const nextBin = path.join(appDir, 'node_modules', 'next', 'dist', 'bin', 'next');
   server = spawn(process.execPath, [nextBin, 'start', '-p', '3000'], {
     cwd: appDir,
     env: {
@@ -20,7 +20,7 @@ function startServer() {
   });
 }
 
-async function waitForServer(url, attempts = 40) {
+async function waitForServer(url, attempts = 60) {
   for (let i = 0; i < attempts; i += 1) {
     try {
       const response = await fetch(url);
