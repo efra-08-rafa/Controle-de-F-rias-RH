@@ -8,46 +8,33 @@ let pool: Pool | undefined;
 type LocalResult<T> = { rows: T[]; rowCount: number };
 type LocalClient = { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values?: unknown[]) => Promise<LocalResult<T>>; release: () => void };
 
-function modoLocal() {
-  return (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local';
-}
-
+function modoLocal() { return (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local'; }
 function getDatabaseUrl() {
   const value = process.env.DATABASE_URL;
   if (!value) throw new Error('DATABASE_URL não configurada no ambiente do servidor.');
   return value;
 }
-
-function placeholders(sql: string) {
-  return sql.replace(/\$(\d+)/g, '?');
-}
+function placeholders(sql: string) { return sql.replace(/\$(\d+)/g, '?'); }
 
 function localQuery<T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []): LocalResult<T> {
-  const database = getLocalDb();
-  const statement = database.prepare(placeholders(sql));
+  const statement = getLocalDb().prepare(placeholders(sql));
   const normalized = sql.trim().toLowerCase();
   if (normalized.startsWith('select') || normalized.startsWith('with') || normalized.startsWith('pragma')) {
     const rows = statement.all(...values) as T[];
     return { rows, rowCount: rows.length };
   }
-  const result = statement.run(...values);
   if (normalized.includes('returning')) {
     const rows = statement.all(...values) as T[];
     return { rows, rowCount: rows.length };
   }
+  const result = statement.run(...values);
   return { rows: [], rowCount: result.changes };
 }
 
 export function getDb() {
   if (modoLocal()) return getLocalDb();
   if (!pool) {
-    pool = new Pool({
-      connectionString: getDatabaseUrl(),
-      max: 10,
-      idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 10_000,
-      ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
-    });
+    pool = new Pool({ connectionString: getDatabaseUrl(), max: 10, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
   }
   return pool;
 }
@@ -64,8 +51,15 @@ function localClient(): LocalClient {
 export async function withTransaction<T>(fn: (client: PoolClient | LocalClient) => Promise<T>) {
   if (modoLocal()) {
     const database = getLocalDb();
-    const transaction = database.transaction(() => fn(localClient()));
-    return transaction() as Promise<T>;
+    database.exec('BEGIN');
+    try {
+      const result = await fn(localClient());
+      database.exec('COMMIT');
+      return result;
+    } catch (error) {
+      database.exec('ROLLBACK');
+      throw error;
+    }
   }
   const client = await (getDb() as Pool).connect();
   try {
