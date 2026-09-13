@@ -11,7 +11,12 @@ type LocalResult<T> = DbResult<T>;
 
 function modoLocal() { return (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local'; }
 function getDatabaseUrl() { const value = process.env.DATABASE_URL; if (!value) throw new Error('DATABASE_URL não configurada no ambiente do servidor.'); return value; }
-function placeholders(sql: string) { return sql.replace(/\$(\d+)/g, '?'); }
+
+// PostgreSQL aceita $1, $2... e também permite reutilizar o mesmo placeholder.
+// SQLite suporta ?1, ?2... com a mesma semântica, por isso mantemos os índices
+// em vez de converter cada ocorrência para um novo '?'. Isso evita erros quando
+// o mesmo parâmetro aparece mais de uma vez na SQL.
+function placeholders(sql: string) { return sql.replace(/\$(\d+)/g, '?$1'); }
 
 function localQuery<T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []): LocalResult<T> {
   const statement = getLocalDb().prepare(placeholders(sql));
