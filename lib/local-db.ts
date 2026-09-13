@@ -35,13 +35,17 @@ export function localRun(sql: string, params: unknown[] = []) {
 
 export function localTransaction<T>(fn: (database: Database.Database) => T) {
   const database = getLocalDb();
-  database.exec('BEGIN');
+  database.exec('BEGIN TRANSACTION');
   try {
     const result = fn(database);
     database.exec('COMMIT');
     return result;
   } catch (error) {
-    database.exec('ROLLBACK');
+    try {
+      database.exec('ROLLBACK');
+    } catch {
+      // mantém o erro original
+    }
     throw error;
   }
 }
