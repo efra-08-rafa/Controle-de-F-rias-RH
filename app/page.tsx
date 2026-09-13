@@ -1,16 +1,37 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { contratoProximo, diasVencidos, direitoAcumulado, estadoFerias, saldoRestante, STORAGE_FERIAS, type FuncionarioFerias } from '../lib/ferias';
 
-type Historico = { inicio: string; fim: string; dias: number; estado: string };
-type Funcionario = { processo: string; nome: string; contacto: string; departamento: string; tipoContrato: 'Permanente' | 'Contratado'; admissao: string; fimContrato: string; diasUtilizados: number; inicioFerias: string; fimFerias: string; historico: Historico[] };
-
-const STORAGE = 'controle-ferias-rh-funcionarios';
+type Funcionario = FuncionarioFerias & { contacto: string; departamento: string };
 const departamentos = ['Administração','Serração','Vendas','Carpintaria','Manutenção','Mecânica','Seguranças'];
-function data(s: string) { return s ? new Date(`${s}T00:00:00`) : null; }
-function estado(f: Funcionario) { const a=data(f.inicioFerias),b=data(f.fimFerias),hoje=new Date(); hoje.setHours(0,0,0,0); if(!a||!b)return'Disponível'; if(b<hoje)return'Férias terminadas'; if(hoje>=a&&hoje<=b)return'Em férias'; const limite=new Date(hoje); limite.setDate(limite.getDate()+7); return a<=limite?'Férias próximas':'Disponível'; }
-function direito(f: Funcionario) { if(!f.admissao)return 0; const inicio=data(f.admissao); if(!inicio)return 0; if(f.tipoContrato==='Permanente')return Math.max(0,new Date().getFullYear()-Math.max(2000,inicio.getFullYear())+1)*30; if(!f.fimContrato)return 0; const fim=data(f.fimContrato); if(!fim||fim<inicio)return 0; return Math.max(0,(fim.getFullYear()-inicio.getFullYear())*12+fim.getMonth()-inicio.getMonth()+(fim.getDate()>=inicio.getDate()?0:-1)+1); }
 function formatar(s:string){if(!s)return'—';const[a,m,d]=s.split('-');return`${d}/${m}/${a}`;}
-function diasRestantes(f:Funcionario){return Math.max(0,direito(f)-(f.diasUtilizados||0));}
-function contratoProximo(f:Funcionario){const fim=data(f.fimContrato);if(!fim)return false;const hoje=new Date();hoje.setHours(0,0,0,0);const limite=new Date(hoje);limite.setDate(limite.getDate()+30);return fim>=hoje&&fim<=limite;}
-export default function Home(){const[funcionarios,setFuncionarios]=useState<Funcionario[]>([]);useEffect(()=>{try{const v=localStorage.getItem(STORAGE);if(v)setFuncionarios(JSON.parse(v));}catch{}} ,[]);const resumo=useMemo(()=>({total:funcionarios.length,emFerias:funcionarios.filter(f=>estado(f)==='Em férias').length,proximas:funcionarios.filter(f=>estado(f)==='Férias próximas').length,vencidas:funcionarios.filter(f=>diasRestantes(f)===0&&direito(f)>0&&estado(f)==='Disponível').length,saldo:funcionarios.reduce((s,f)=>s+diasRestantes(f),0),contratos:funcionarios.filter(contratoProximo).length}),[funcionarios]);return <main><div className="container"><section className="hero"><h1>Painel de férias dos Recursos Humanos</h1><p>Visão geral automática dos funcionários, férias, saldos e alertas.</p></section><section className="grid"><div className="card"><span className="card-label">Total de funcionários</span><span className="card-value">{resumo.total}</span></div><div className="card"><span className="card-label">Férias em curso</span><span className="card-value">{resumo.emFerias}</span></div><div className="card"><span className="card-label">Férias próximas</span><span className="card-value">{resumo.proximas}</span></div><div className="card"><span className="card-label">Férias vencidas</span><span className="card-value">{resumo.vencidas}</span></div><div className="card"><span className="card-label">Saldo total de férias</span><span className="card-value">{resumo.saldo} <small>dias</small></span></div><div className="card"><span className="card-label">Contratos a terminar (30 dias)</span><span className="card-value">{resumo.contratos}</span></div></section><section className="section"><h2>Departamentos</h2><div className="department-list">{departamentos.map(dep=>{const lista=funcionarios.filter(f=>f.departamento===dep);return <a className="department" href={`/departamentos?nome=${encodeURIComponent(dep)}`} key={dep}><strong>{dep}</strong><span>{lista.length} funcionário(s)</span></a>;})}</div></section><section className="section"><h2>Alertas</h2>{!funcionarios.length&&<p className="empty-state">Cadastre funcionários para começar a receber alertas automáticos.</p>}{funcionarios.filter(f=>estado(f)==='Férias próximas').map(f=><div className="alert-card" key={`p-${f.processo}`}><strong>Férias próximas:</strong> {f.nome} — início em {formatar(f.inicioFerias)}.</div>)}{funcionarios.filter(f=>diasRestantes(f)===0&&direito(f)>0&&estado(f)==='Disponível').map(f=><div className="alert-card danger" key={`v-${f.processo}`}><strong>Saldo esgotado:</strong> {f.nome} — não possui saldo disponível.</div>)}{funcionarios.filter(contratoProximo).map(f=><div className="alert-card warning" key={`c-${f.processo}`}><strong>Contrato a terminar:</strong> {f.nome} — {formatar(f.fimContrato)}.</div>)}</section><section className="section"><h2>Ações rápidas</h2><div className="quick-links"><a href="/funcionarios">+ Funcionário</a><a href="/ferias">Registar férias</a><a href="/departamentos">Ver departamentos</a><a href="/relatorios">Abrir relatórios</a></div></section></div></main>;}
+
+export default function Home(){
+ const[funcionarios,setFuncionarios]=useState<Funcionario[]>([]);
+ useEffect(()=>{try{const v=localStorage.getItem(STORAGE_FERIAS);if(v)setFuncionarios(JSON.parse(v));}catch{}},[]);
+ const resumo=useMemo(()=>({
+  total:funcionarios.length,
+  emFerias:funcionarios.filter(f=>estadoFerias(f.inicioFerias,f.fimFerias)==='Em férias').length,
+  proximas:funcionarios.filter(f=>estadoFerias(f.inicioFerias,f.fimFerias)==='Férias próximas').length,
+  vencidas:funcionarios.filter(f=>diasVencidos(f)>0).length,
+  saldo:funcionarios.reduce((s,f)=>s+saldoRestante(f),0),
+  contratos:funcionarios.filter(contratoProximo).length,
+ }),[funcionarios]);
+ const alertasVencidas=funcionarios.filter(f=>diasVencidos(f)>0);
+ const alertasProximas=funcionarios.filter(f=>estadoFerias(f.inicioFerias,f.fimFerias)==='Férias próximas');
+ const alertasContrato=funcionarios.filter(contratoProximo);
+ return <main><div className="container">
+  <section className="hero"><h1>Painel de férias dos Recursos Humanos</h1><p>Visão geral automática dos funcionários, férias, saldos e alertas.</p></section>
+  <section className="grid"><div className="card"><span className="card-label">Total de funcionários</span><span className="card-value">{resumo.total}</span></div><div className="card"><span className="card-label">Férias em curso</span><span className="card-value">{resumo.emFerias}</span></div><div className="card"><span className="card-label">Férias próximas</span><span className="card-value">{resumo.proximas}</span></div><div className="card"><span className="card-label">Férias vencidas</span><span className="card-value">{resumo.vencidas}</span></div><div className="card"><span className="card-label">Saldo total de férias</span><span className="card-value">{resumo.saldo} <small>dias</small></span></div><div className="card"><span className="card-label">Contratos a terminar (30 dias)</span><span className="card-value">{resumo.contratos}</span></div></section>
+  <section className="section"><h2>Departamentos</h2><div className="department-list">{departamentos.map(dep=>{const lista=funcionarios.filter(f=>f.departamento===dep);return <a className="department" href={`/departamentos?nome=${encodeURIComponent(dep)}`} key={dep}><strong>{dep}</strong><span>{lista.length} funcionário(s)</span></a>;})}</div></section>
+  <section className="section"><h2>Alertas automáticos</h2>{!funcionarios.length&&<p className="empty-state">Cadastre funcionários para começar a receber alertas automáticos.</p>}
+   {alertasVencidas.map(f=><div className="alert-card danger" key={`v-${f.processo}`}><strong>Férias vencidas:</strong> {f.nome} — {diasVencidos(f)} dia(s) de saldo de anos anteriores ainda não utilizados.</div>)}
+   {alertasProximas.map(f=><div className="alert-card" key={`p-${f.processo}`}><strong>Férias próximas:</strong> {f.nome} — início em {formatar(f.inicioFerias)}.</div>)}
+   {alertasContrato.map(f=><div className="alert-card warning" key={`c-${f.processo}`}><strong>Contrato a terminar:</strong> {f.nome} — {formatar(f.fimContrato)}.</div>)}
+   {!!funcionarios.length&&!alertasVencidas.length&&!alertasProximas.length&&!alertasContrato.length&&<p className="empty-state">Nenhum alerta pendente neste momento.</p>}
+  </section>
+  <section className="section"><h2>Saldo dos funcionários</h2>{funcionarios.length===0?<p className="empty-state">Nenhum funcionário cadastrado.</p>:<div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Direito</th><th>Utilizados</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>{funcionarios.map(f=><tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{direitoAcumulado(f)} dias</td><td>{Math.max(0,direitoAcumulado(f)-saldoRestante(f))} dias</td><td><strong>{saldoRestante(f)} dias</strong></td><td>{estadoFerias(f.inicioFerias,f.fimFerias)}</td></tr>)}</tbody></table></div>}</section>
+  <section className="section"><h2>Ações rápidas</h2><div className="quick-links"><a href="/funcionarios">+ Funcionário</a><a href="/ferias">Registar férias</a><a href="/departamentos">Ver departamentos</a><a href="/relatorios">Abrir relatórios</a></div></section>
+ </div></main>;
+}
