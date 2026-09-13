@@ -58,6 +58,14 @@ jobs:
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
 
+      - name: Verify installer exists
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem "dist/Controle-de-Ferias-RH-Setup-*.exe" -File | Select-Object -First 1
+          if (-not $installer) { throw "Instalador Windows não foi criado." }
+          Write-Host "INSTALADOR CRIADO: $($installer.FullName)"
+          Write-Host "TAMANHO: $([math]::Round($installer.Length / 1MB, 2)) MB"
+
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
