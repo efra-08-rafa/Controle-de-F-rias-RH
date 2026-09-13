@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { contratoProximo, diasVencidos, direitoAcumulado, estadoFerias, saldoRestante, STORAGE_FERIAS, type FuncionarioFerias } from '../lib/ferias';
+import { contratoProximo, diasUtilizadosReal, diasVencidos, direitoAcumulado, estadoFerias, saldoRestante, STORAGE_FERIAS, type FuncionarioFerias } from '../lib/ferias';
 
 type Funcionario = FuncionarioFerias & { contacto: string; departamento: string };
 const departamentos = ['Administração','Serração','Vendas','Carpintaria','Manutenção','Mecânica','Seguranças'];
@@ -31,7 +31,7 @@ export default function Home(){
    {alertasContrato.map(f=><div className="alert-card warning" key={`c-${f.processo}`}><strong>Contrato a terminar:</strong> {f.nome} — {formatar(f.fimContrato)}.</div>)}
    {!!funcionarios.length&&!alertasVencidas.length&&!alertasProximas.length&&!alertasContrato.length&&<p className="empty-state">Nenhum alerta pendente neste momento.</p>}
   </section>
-  <section className="section"><h2>Saldo dos funcionários</h2>{funcionarios.length===0?<p className="empty-state">Nenhum funcionário cadastrado.</p>:<div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Direito</th><th>Utilizados</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>{funcionarios.map(f=><tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{direitoAcumulado(f)} dias</td><td>{Math.max(0,direitoAcumulado(f)-saldoRestante(f))} dias</td><td><strong>{saldoRestante(f)} dias</strong></td><td>{estadoFerias(f.inicioFerias,f.fimFerias)}</td></tr>)}</tbody></table></div>}</section>
+  <section className="section"><h2>Saldo dos funcionários</h2>{funcionarios.length===0?<p className="empty-state">Nenhum funcionário cadastrado.</p>:<div className="table-wrapper"><table><thead><tr><th>Processo</th><th>Nome</th><th>Direito</th><th>Utilizados</th><th>Saldo</th><th>Estado</th></tr></thead><tbody>{funcionarios.map(f=><tr key={f.processo}><td>{f.processo}</td><td><strong>{f.nome}</strong></td><td>{direitoAcumulado(f)} dias</td><td>{diasUtilizadosReal(f)} dias</td><td><strong>{saldoRestante(f)} dias</strong></td><td>{estadoFerias(f.inicioFerias,f.fimFerias)}</td></tr>)}</tbody></table></div>}</section>
   <section className="section"><h2>Ações rápidas</h2><div className="quick-links"><a href="/funcionarios">+ Funcionário</a><a href="/ferias">Registar férias</a><a href="/departamentos">Ver departamentos</a><a href="/relatorios">Abrir relatórios</a></div></section>
  </div></main>;
 }
