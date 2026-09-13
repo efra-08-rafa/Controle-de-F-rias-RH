@@ -38,6 +38,6 @@ export function localTransaction<T>(fn: (database: Database.Database) => T) {
 }
 
 export function verificarDbLocal() {
-  const row = getLocalDb().prepare('select datetime(\'now\') as agora').get() as { agora: string } | undefined;
-  return row?.agora ?? null;
+  const rows = getLocalDb().prepare("select datetime('now') as agora").all() as Array<{ agora?: string }>;
+  return rows[0]?.agora ?? null;
 }
