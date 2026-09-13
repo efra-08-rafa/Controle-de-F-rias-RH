@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
-import { dbQuery, withTransaction } from '@/lib/server-db';
+import { dbQuery, withTransaction, type DbClient } from '@/lib/server-db';
 import { exigirSessao, temPermissao, respostaAutorizacao } from '@/lib/server-auth';
 
 export const runtime = 'nodejs';
@@ -8,6 +8,7 @@ export const runtime = 'nodejs';
 type Entidade = 'funcionario' | 'ferias' | 'utilizador';
 type Operacao = 'CREATE' | 'UPDATE' | 'DELETE';
 type Envelope = { operacaoId?: string; dispositivoId?: string; entidade?: Entidade; entidadeId?: string; operacao?: Operacao; versaoLocal?: number; criadoEm?: string; payload?: unknown };
+type EventoValido = { operacaoId: string; dispositivoId: string; entidade: Entidade; entidadeId: string; operacao: Operacao; versaoLocal: number; payload?: unknown };
 type Payload = Record<string, unknown>;
 const local = () => (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local';
 const auditJson = (n: number) => local() ? `$${n}` : `$${n}::jsonb`;
@@ -34,7 +35,7 @@ function erroValidacao(entidade: Entidade, op: Operacao, p: Payload | null) {
   return null;
 }
 
-async function aplicarEvento(client: any, item: Required<Pick<Envelope, 'entidade'|'entidadeId'|'operacao'|'versaoLocal'>> & { payload: unknown }, sessao: any, request: Request) {
+async function aplicarEvento(client: DbClient, item: EventoValido, sessao: Awaited<ReturnType<typeof exigirSessao>>) {
   const p = payloadObject(item.payload);
   const erro = erroValidacao(item.entidade, item.operacao, p);
   if (erro) throw new Error(erro);
@@ -99,11 +100,12 @@ export async function POST(request: Request) {
     for (const item of eventos) {
       const operacaoId=text(item.operacaoId),dispositivoId=text(item.dispositivoId);
       if(!operacaoId||!dispositivoId||!item.entidade||!item.entidadeId||!item.operacao||!Number.isInteger(item.versaoLocal)){resultados.push({operacaoId:operacaoId||null,status:'ERRO',mensagem:'Evento de sincronização inválido.'});continue;}
+      const evento: EventoValido = { operacaoId, dispositivoId, entidade: item.entidade, entidadeId: item.entidadeId, operacao: item.operacao, versaoLocal: item.versaoLocal, payload: item.payload };
       if(item.entidade==='utilizador'&&sessao.papel!=='Administrador'){resultados.push({operacaoId,status:'ERRO',mensagem:'Sem permissão para sincronizar utilizadores.'});continue;}
       try {
         const existente=await dbQuery<{status:string}>('select status from sincronizacao_eventos where operacao_id=$1 limit 1',[operacaoId]);
         if(existente.rows[0]){resultados.push({operacaoId,status:existente.rows[0].status==='CONFLITO'?'CONFLITO':'PROCESSADO'});continue;}
-        const result=await withTransaction(client=>aplicarEvento(client,{operacaoId,dispositivoId,entidade:item.entidade!,entidadeId:item.entidadeId!,operacao:item.operacao!,versaoLocal:item.versaoLocal!,payload:item.payload},sessao,request));
+        const result=await withTransaction(client=>aplicarEvento(client,evento,sessao));
         resultados.push({operacaoId,...result});
       } catch(error) { resultados.push({operacaoId,status:'ERRO',mensagem:error instanceof Error?error.message:'Erro de sincronização.'}); }
     }
