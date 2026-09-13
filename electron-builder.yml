@@ -17,7 +17,6 @@ files:
   - node_modules/react-dom/**
   - node_modules/better-sqlite3/**
   - node_modules/pg/**
-extraResources: []
 win:
   target:
     - nsis
