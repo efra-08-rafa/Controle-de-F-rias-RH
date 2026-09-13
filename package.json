@@ -2,11 +2,14 @@
   "name": "controle-de-ferias-rh",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "electron:start": "electron .",
+    "dist:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
@@ -21,6 +24,8 @@
     "@types/pg": "^8.15.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5"
+    "typescript": "^5",
+    "electron": "^38.1.2",
+    "electron-builder": "^26.0.12"
   }
 }
