@@ -1,11 +1,19 @@
 import 'server-only';
+import { cookies } from 'next/headers';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export type Papel = 'Administrador' | 'RH' | 'Outro';
+export type Permissao = 'painel' | 'funcionarios' | 'ferias' | 'departamentos' | 'relatorios' | 'configuracoes' | 'utilizadores';
 export type Sessao = { utilizadorId: string; nome: string; papel: Papel; inicio: string; exp: number };
 
 export const SESSION_COOKIE = 'rh_session';
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
+
+export const permissoesPorPapel: Record<Papel, Record<Permissao, boolean>> = {
+  Administrador: { painel: true, funcionarios: true, ferias: true, departamentos: true, relatorios: true, configuracoes: true, utilizadores: true },
+  RH: { painel: true, funcionarios: true, ferias: true, departamentos: true, relatorios: true, configuracoes: false, utilizadores: false },
+  Outro: { painel: true, funcionarios: false, ferias: false, departamentos: true, relatorios: false, configuracoes: false, utilizadores: false },
+};
 
 function secret() {
   const value = process.env.SESSION_SECRET;
@@ -13,19 +21,16 @@ function secret() {
   return value;
 }
 
-function base64url(value: string) {
-  return Buffer.from(value, 'utf8').toString('base64url');
-}
-
-function sign(value: string) {
-  return createHmac('sha256', secret()).update(value).digest('base64url');
-}
+function base64url(value: string) { return Buffer.from(value, 'utf8').toString('base64url'); }
+function sign(value: string) { return createHmac('sha256', secret()).update(value).digest('base64url'); }
 
 function verify(value: string, signature: string) {
-  const expected = sign(value);
-  const a = Buffer.from(signature);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+  try {
+    const expected = sign(value);
+    const a = Buffer.from(signature);
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+  } catch { return false; }
 }
 
 export function criarSessao(utilizadorId: string, nome: string, papel: Papel) {
@@ -37,15 +42,50 @@ export function criarSessao(utilizadorId: string, nome: string, papel: Papel) {
 
 export function lerSessao(token?: string | null): Sessao | null {
   if (!token) return null;
-  const [encoded, signature] = token.split('.');
-  if (!encoded || !signature || !verify(encoded, signature)) return null;
+  const partes = token.split('.');
+  if (partes.length !== 2) return null;
+  const [encoded, signature] = partes;
+  if (!verify(encoded, signature)) return null;
   try {
     const sessao = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf8')) as Sessao;
-    if (!sessao?.utilizadorId || !sessao?.papel || !sessao?.exp || sessao.exp <= Math.floor(Date.now() / 1000)) return null;
+    if (!sessao?.utilizadorId || !sessao?.nome || !sessao?.papel || !sessao?.exp) return null;
+    if (!Object.prototype.hasOwnProperty.call(permissoesPorPapel, sessao.papel)) return null;
+    if (sessao.exp <= Math.floor(Date.now() / 1000)) return null;
     return sessao;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
+}
+
+export async function obterSessaoServidor() {
+  const store = await cookies();
+  return lerSessao(store.get(SESSION_COOKIE)?.value);
+}
+
+export function temPermissao(papel: Papel, permissao: Permissao) {
+  return permissoesPorPapel[papel]?.[permissao] === true;
+}
+
+export async function exigirSessao() {
+  const sessao = await obterSessaoServidor();
+  if (!sessao) throw new Error('UNAUTHORIZED');
+  return sessao;
+}
+
+export async function exigirPermissao(permissao: Permissao) {
+  const sessao = await exigirSessao();
+  if (!temPermissao(sessao.papel, permissao)) throw new Error('FORBIDDEN');
+  return sessao;
+}
+
+export async function exigirPapel(...papeis: Papel[]) {
+  const sessao = await exigirSessao();
+  if (!papeis.includes(sessao.papel)) throw new Error('FORBIDDEN');
+  return sessao;
+}
+
+export function respostaAutorizacao(error: unknown) {
+  const { NextResponse } = require('next/server') as typeof import('next/server');
+  if (error instanceof Error && error.message === 'FORBIDDEN') return NextResponse.json({ ok: false, erro: 'Sem permissão para esta operação.' }, { status: 403 });
+  return NextResponse.json({ ok: false, erro: 'Sessão inválida ou expirada.' }, { status: 401 });
 }
 
 export function autenticar(id: string, password: string) {
