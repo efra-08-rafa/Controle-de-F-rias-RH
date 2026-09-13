@@ -26,11 +26,11 @@ function verifyPassword(password:string,stored:string){try{const[,salt,hash]=sto
 
 async function garantirUtilizadoresIniciais(){
  const contas=[
-  {login:process.env.ADMIN_USER_ID||'ekimane',nome:'Administrador',papel:'Administrador' as const,password:process.env.ADMIN_PASSWORD||''},
-  {login:process.env.RH_USER_ID||'ifloma',nome:'Responsável RH',papel:'RH' as const,password:process.env.RH_PASSWORD||''},
-  {login:process.env.OUTRO_USER_ID||'ifloma',nome:'Outro utilizador',papel:'Outro' as const,password:process.env.OUTRO_PASSWORD||''},
+  {login:process.env.ADMIN_USER_ID||'',nome:'Administrador',papel:'Administrador' as const,password:process.env.ADMIN_PASSWORD||''},
+  {login:process.env.RH_USER_ID||'',nome:'Responsável RH',papel:'RH' as const,password:process.env.RH_PASSWORD||''},
+  {login:process.env.OUTRO_USER_ID||'',nome:'Outro utilizador',papel:'Outro' as const,password:process.env.OUTRO_PASSWORD||''},
  ];
- if(contas.some(c=>!c.password)) return;
+ if(contas.some(c=>!c.login.trim()||!c.password)) return;
  await withTransaction(async client=>{
   for(const conta of contas){
    const login=conta.login.trim();
@@ -40,6 +40,27 @@ async function garantirUtilizadoresIniciais(){
    }else if(!verifyPassword(conta.password,existente.rows[0].password_hash)){
     await client.query('update utilizadores set login=$1,nome=$2,password_hash=$3,ativo=1,atualizado_em=CURRENT_TIMESTAMP where id=$4',[login,conta.nome,hashPassword(conta.password),existente.rows[0].id]);
    }
+  }
+ });
+}
+
+export async function utilizadoresConfigurados(){
+ await garantirUtilizadoresIniciais();
+ const result=await dbQuery<{total:number}>('select count(*) as total from utilizadores');
+ return Number(result.rows[0]?.total||0)>0;
+}
+
+export async function criarConfiguracaoInicial(contas:Array<{login:string;nome:string;papel:Papel;password:string}>){
+ if(contas.length!==3) throw new Error('CONFIGURACAO_INVALIDA');
+ const papeis=new Set(contas.map(c=>c.papel));
+ if(papeis.size!==3||!papeis.has('Administrador')||!papeis.has('RH')||!papeis.has('Outro')) throw new Error('CONFIGURACAO_INVALIDA');
+ if(contas.some(c=>!c.login.trim()||c.password.length<4)) throw new Error('DADOS_INVALIDOS');
+ await garantirUtilizadoresIniciais();
+ const existentes=await dbQuery<{total:number}>('select count(*) as total from utilizadores');
+ if(Number(existentes.rows[0]?.total||0)>0) throw new Error('JA_CONFIGURADO');
+ await withTransaction(async client=>{
+  for(const conta of contas){
+   await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,atualizado_em) values($1,$2,$3,$4,$5,1,CURRENT_TIMESTAMP)',[randomUUID(),conta.login.trim(),conta.nome.trim()||conta.login.trim(),conta.papel,hashPassword(conta.password)]);
   }
  });
 }
