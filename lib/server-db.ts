@@ -7,15 +7,10 @@ let pool: Pool | undefined;
 
 type DbResult<T> = { rows: T[]; rowCount: number };
 export type DbClient = { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values?: unknown[]) => Promise<DbResult<T>> };
-
 type LocalResult<T> = DbResult<T>;
 
 function modoLocal() { return (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local'; }
-function getDatabaseUrl() {
-  const value = process.env.DATABASE_URL;
-  if (!value) throw new Error('DATABASE_URL não configurada no ambiente do servidor.');
-  return value;
-}
+function getDatabaseUrl() { const value = process.env.DATABASE_URL; if (!value) throw new Error('DATABASE_URL não configurada no ambiente do servidor.'); return value; }
 function placeholders(sql: string) { return sql.replace(/\$(\d+)/g, '?'); }
 
 function localQuery<T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []): LocalResult<T> {
@@ -35,9 +30,7 @@ function localQuery<T extends QueryResultRow = QueryResultRow>(sql: string, valu
 
 export function getDb() {
   if (modoLocal()) return getLocalDb();
-  if (!pool) {
-    pool = new Pool({ connectionString: getDatabaseUrl(), max: 10, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
-  }
+  if (!pool) pool = new Pool({ connectionString: getDatabaseUrl(), max: 10, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
   return pool;
 }
 
@@ -51,39 +44,24 @@ function localClient(): DbClient {
 }
 
 function postgresClient(client: PoolClient): DbClient {
-  return { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => client.query<T>(sql, values) };
+  return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => { const result = await client.query<T>(sql, values); return { rows: result.rows, rowCount: result.rowCount ?? 0 }; } };
 }
 
 export async function withTransaction<T>(fn: (client: DbClient) => Promise<T>) {
   if (modoLocal()) {
-    const database = getLocalDb();
-    database.exec('BEGIN');
-    try {
-      const result = await fn(localClient());
-      database.exec('COMMIT');
-      return result;
-    } catch (error) {
-      database.exec('ROLLBACK');
-      throw error;
-    }
+    const database = getLocalDb(); database.exec('BEGIN');
+    try { const result = await fn(localClient()); database.exec('COMMIT'); return result; }
+    catch (error) { database.exec('ROLLBACK'); throw error; }
   }
   const client = await (getDb() as Pool).connect();
-  try {
-    await client.query('BEGIN');
-    const result = await fn(postgresClient(client));
-    await client.query('COMMIT');
-    return result;
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
-  }
+  try { await client.query('BEGIN'); const result = await fn(postgresClient(client)); await client.query('COMMIT'); return result; }
+  catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
 }
 
 export async function verificarDb() {
   if (modoLocal()) {
-    const row = getLocalDb().prepare("select datetime('now') as agora").get() as { agora?: string } | undefined;
+    const row = getLocalDb().prepare("select datetime('now') as agora").get(undefined) as { agora?: string } | undefined;
     return row?.agora ?? null;
   }
   const result = await dbQuery<{ agora: string }>('select now() as agora');
