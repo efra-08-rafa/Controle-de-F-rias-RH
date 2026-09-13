@@ -1,55 +1,14 @@
 import { NextResponse } from 'next/server';
 import { dbQuery, withTransaction } from '@/lib/server-db';
 import { exigirPermissao, respostaAutorizacao } from '@/lib/server-auth';
-
 export const runtime = 'nodejs';
 
 type FeriasInput = { funcionarioId?: string; inicio?: string; fim?: string; dias?: number; estado?: string };
-function data(v: unknown) { return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : ''; }
-function erro(code: string) {
-  const map: Record<string,string> = { DADOS_INVALIDOS:'Funcionário, início, fim e quantidade de dias são obrigatórios.', DATAS_INVALIDAS:'A data de fim não pode ser anterior ao início.', DIAS_INVALIDOS:'A quantidade de dias deve ser maior que zero.', FUNCIONARIO_INEXISTENTE:'Funcionário não encontrado ou inativo.' };
-  return map[code] || 'Não foi possível concluir a operação.';
-}
+const data=(v:unknown)=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)?v:'';
+const local=()=> (process.env.DATABASE_MODE||'local').toLowerCase()==='local';
+const auditJson=(n:number)=>local()?`$${n}`:`$${n}::jsonb`;
+function erro(code:string){const map:Record<string,string>={DADOS_INVALIDOS:'Funcionário, início, fim e quantidade de dias são obrigatórios.',DATAS_INVALIDAS:'A data de fim não pode ser anterior ao início.',DIAS_INVALIDOS:'A quantidade de dias deve ser maior que zero.',FUNCIONARIO_INEXISTENTE:'Funcionário não encontrado ou inativo.'};return map[code]||'Não foi possível concluir a operação.';}
 
-export async function GET() {
-  try {
-    await exigirPermissao('ferias');
-    const result = await dbQuery(`select f.id,f.funcionario_id as "funcionarioId",u.processo,u.nome,u.departamento_id as "departamentoId",
-      d.nome as departamento,f.inicio,f.fim,f.dias,f.estado,f.versao,f.criado_em as "criadoEm",f.atualizado_em as "atualizadoEm"
-      from ferias f join funcionarios u on u.id=f.funcionario_id left join departamentos d on d.id=u.departamento_id
-      order by f.inicio desc`);
-    return NextResponse.json({ok:true,ferias:result.rows});
-  } catch (error) {
-    if (error instanceof Error && ['UNAUTHORIZED','FORBIDDEN'].includes(error.message)) return respostaAutorizacao(error);
-    console.error('GET /api/ferias',error); return NextResponse.json({ok:false,erro:'Não foi possível carregar as férias.'},{status:500});
-  }
-}
+export async function GET(){try{await exigirPermissao('ferias');const result=await dbQuery(`select f.id,f.funcionario_id as "funcionarioId",u.processo,u.nome,u.departamento_id as "departamentoId",d.nome as departamento,f.inicio,f.fim,f.dias,f.estado,f.versao,f.criado_em as "criadoEm",f.atualizado_em as "atualizadoEm" from ferias f join funcionarios u on u.id=f.funcionario_id left join departamentos d on d.id=u.departamento_id order by f.inicio desc`);return NextResponse.json({ok:true,ferias:result.rows});}catch(error){if(error instanceof Error&&['UNAUTHORIZED','FORBIDDEN'].includes(error.message))return respostaAutorizacao(error);console.error('GET /api/ferias',error);return NextResponse.json({ok:false,erro:'Não foi possível carregar as férias.'},{status:500});}}
 
-export async function POST(request: Request) {
-  try {
-    const sessao = await exigirPermissao('ferias');
-    const input = (await request.json()) as FeriasInput;
-    const funcionarioId = typeof input.funcionarioId === 'string' ? input.funcionarioId.trim() : '';
-    const inicio = data(input.inicio), fim = data(input.fim), dias = Number(input.dias || 0);
-    if (!funcionarioId || !inicio || !fim) throw new Error('DADOS_INVALIDOS');
-    if (fim < inicio) throw new Error('DATAS_INVALIDAS');
-    if (!Number.isInteger(dias) || dias <= 0) throw new Error('DIAS_INVALIDOS');
-
-    const result = await withTransaction(async (client) => {
-      const funcionario = await client.query('select id from funcionarios where id=$1 and ativo=true',[funcionarioId]);
-      if (!funcionario.rows[0]) throw new Error('FUNCIONARIO_INEXISTENTE');
-      const insert = await client.query(`insert into ferias(funcionario_id,inicio,fim,dias,estado,criado_por,atualizado_por)
-        values($1,$2,$3,$4,$5,$6,$6) returning id,funcionario_id as "funcionarioId",inicio,fim,dias,estado,versao,atualizado_em as "atualizadoEm"`,
-        [funcionarioId,inicio,fim,dias,input.estado || 'Disponível',sessao.utilizadorId]);
-      const novo = insert.rows[0];
-      await client.query(`insert into auditoria(entidade,entidade_id,operacao,utilizador_id,dispositivo_id,origem,depois)
-        values('ferias',$1,'CREATE',$2,$3,'online',$4::jsonb)`,[novo.id,sessao.utilizadorId,request.headers.get('x-device-id')||null,JSON.stringify(novo)]);
-      return novo;
-    });
-    return NextResponse.json({ok:true,ferias:result},{status:201});
-  } catch (error) {
-    if (error instanceof Error && ['UNAUTHORIZED','FORBIDDEN'].includes(error.message)) return respostaAutorizacao(error);
-    if (error instanceof Error && ['DADOS_INVALIDOS','DATAS_INVALIDAS','DIAS_INVALIDOS','FUNCIONARIO_INEXISTENTE'].includes(error.message)) return NextResponse.json({ok:false,erro:erro(error.message)},{status:400});
-    console.error('POST /api/ferias',error); return NextResponse.json({ok:false,erro:'Não foi possível registar as férias.'},{status:500});
-  }
-}
+export async function POST(request:Request){try{const sessao=await exigirPermissao('ferias');const input=await request.json() as FeriasInput;const funcionarioId=typeof input.funcionarioId==='string'?input.funcionarioId.trim():'';const inicio=data(input.inicio),fim=data(input.fim),dias=Number(input.dias||0);if(!funcionarioId||!inicio||!fim)throw new Error('DADOS_INVALIDOS');if(fim<inicio)throw new Error('DATAS_INVALIDAS');if(!Number.isInteger(dias)||dias<=0)throw new Error('DIAS_INVALIDOS');const result=await withTransaction(async client=>{const funcionario=await client.query('select id from funcionarios where id=$1 and ativo=true',[funcionarioId]);if(!funcionario.rows[0])throw new Error('FUNCIONARIO_INEXISTENTE');const insert=await client.query(`insert into ferias(funcionario_id,inicio,fim,dias,estado,criado_por,atualizado_por) values($1,$2,$3,$4,$5,$6,$6) returning id,funcionario_id as "funcionarioId",inicio,fim,dias,estado,versao,atualizado_em as "atualizadoEm"`,[funcionarioId,inicio,fim,dias,input.estado||'Disponível',sessao.utilizadorId]);const novo=insert.rows[0];await client.query(`insert into auditoria(entidade,entidade_id,operacao,utilizador_id,dispositivo_id,origem,depois) values('ferias',$1,'CREATE',$2,$3,'online',${auditJson(4)})`,[novo.id,sessao.utilizadorId,request.headers.get('x-device-id')||null,JSON.stringify(novo)]);return novo;});return NextResponse.json({ok:true,ferias:result},{status:201});}catch(error){if(error instanceof Error&&['UNAUTHORIZED','FORBIDDEN'].includes(error.message))return respostaAutorizacao(error);if(error instanceof Error&&['DADOS_INVALIDOS','DATAS_INVALIDAS','DIAS_INVALIDOS','FUNCIONARIO_INEXISTENTE'].includes(error.message))return NextResponse.json({ok:false,erro:erro(error.message)},{status:400});console.error('POST /api/ferias',error);return NextResponse.json({ok:false,erro:'Não foi possível registar as férias.'},{status:500});}}
