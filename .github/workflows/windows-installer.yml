@@ -5,6 +5,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   build-windows-installer:
     runs-on: windows-latest
@@ -73,3 +76,16 @@ jobs:
           path: dist/Controle-de-Ferias-RH-Setup-*.exe
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.0-build.${{ github.run_number }}
+          name: Controle de Férias RH v0.1.0 (build ${{ github.run_number }})
+          body: |
+            Instalador Windows do Controle de Férias RH.
+
+            Inclui o aplicativo desktop com banco de dados local SQLite.
+          files: dist/Controle-de-Ferias-RH-Setup-*.exe
+          generate_release_notes: true
+          make_latest: true
