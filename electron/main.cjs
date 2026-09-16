@@ -6,6 +6,8 @@ const { randomBytes } = require('node:crypto');
 
 let server;
 let logFile;
+let win;
+let paginaCarregada = false;
 
 function writeLog(message) {
   try {
@@ -27,6 +29,14 @@ function getSessionSecret() {
   }
 }
 
+function telaDiagnostico(titulo, mensagem) {
+  if (!win || win.isDestroyed()) return;
+  const safeTitle = String(titulo).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  const safeMessage = String(mensagem).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${safeTitle}</title><style>body{font-family:Arial,sans-serif;background:#f4f8f2;margin:0;padding:48px;color:#111}.box{max-width:820px;margin:auto;background:#fff;border-radius:16px;padding:32px;box-shadow:0 10px 35px #0002;border-top:6px solid #245c3a}h1{margin:0 0 14px;color:#245c3a}p{line-height:1.55}code{display:block;word-break:break-all;background:#eef2ed;padding:12px;border-radius:8px;margin-top:8px}</style></head><body><div class="box"><h1>${safeTitle}</h1><p>${safeMessage}</p><p>O diagnóstico foi guardado neste ficheiro:</p><code>${String(logFile).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')}</code><p>Pode fechar esta janela e abrir novamente o programa.</p></div></body></html>`;
+  win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
+}
+
 function startServer() {
   const appDir = path.join(process.resourcesPath, 'app');
   const serverFile = path.join(appDir, 'server.js');
@@ -36,6 +46,7 @@ function startServer() {
   fs.mkdirSync(path.join(userDataDir, 'data'), { recursive: true });
   writeLog(`Iniciando aplicativo. appDir=${appDir}`);
   writeLog(`Server=${serverFile}`);
+  writeLog(`Electron=${process.execPath}`);
 
   if (!fs.existsSync(serverFile)) throw new Error(`Servidor Next não encontrado: ${serverFile}`);
 
@@ -78,39 +89,62 @@ async function waitForServer(url, attempts = 60) {
 }
 
 async function createWindow() {
-  startServer();
-  await waitForServer('http://127.0.0.1:3000/login');
-
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1100,
     minHeight: 700,
     autoHideMenuBar: true,
     show: true,
+    backgroundColor: '#f4f8f2',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false
     }
   });
 
-  win.webContents.on('did-finish-load', () => writeLog(`Página carregada: ${win.webContents.getURL()}`));
+  win.webContents.on('did-start-loading', () => writeLog('Navegação iniciada.'));
+  win.webContents.on('dom-ready', () => writeLog(`DOM pronto: ${win.webContents.getURL()}`));
+  win.webContents.on('did-finish-load', () => {
+    paginaCarregada = true;
+    writeLog(`Página carregada: ${win.webContents.getURL()}`);
+  });
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     writeLog(`FALHA AO CARREGAR: code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
-    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>Controle de Férias RH</title><style>body{font-family:Arial,sans-serif;background:#f4f7f5;margin:0;padding:60px;color:#111}.box{max-width:760px;margin:auto;background:white;border-radius:16px;padding:32px;box-shadow:0 8px 30px #0001}h1{margin-top:0}code{word-break:break-all;background:#eee;padding:3px 6px;border-radius:5px}.muted{color:#555}</style></head><body><div class="box"><h1>O sistema não conseguiu carregar</h1><p>O servidor local iniciou, mas a janela não conseguiu carregar a aplicação.</p><p><strong>Erro:</strong> ${String(errorDescription).replaceAll('&','&amp;').replaceAll('<','&lt;')}</p><p class="muted">Abra novamente o programa. Se o problema continuar, o diagnóstico está guardado em:</p><p><code>${logFile}</code></p></div></body></html>`;
-    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    if (validatedURL.startsWith('http://127.0.0.1:3000')) telaDiagnostico('Falha ao carregar o sistema', `O servidor local iniciou, mas a aplicação não conseguiu carregar. Erro: ${errorDescription} (código ${errorCode}).`);
   });
-
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    writeLog(`CONSOLE: level=${level} line=${line} source=${sourceId} message=${message}`);
+  });
   win.webContents.on('render-process-gone', (_event, details) => {
     writeLog(`RENDERER GONE: ${details.reason}`);
+    telaDiagnostico('A janela encontrou um erro', `O processo visual do aplicativo foi encerrado (${details.reason}).`);
   });
 
-  await win.loadURL('http://127.0.0.1:3000/login');
+  try {
+    telaDiagnostico('A iniciar o Controle de Férias RH', 'A preparar o sistema. Esta mensagem será substituída automaticamente quando o servidor estiver pronto.');
+    startServer();
+    await waitForServer('http://127.0.0.1:3000/login');
+    writeLog('Servidor confirmado. Abrindo /login.');
+    await win.loadURL('http://127.0.0.1:3000/login');
+    setTimeout(() => {
+      if (!paginaCarregada && win && !win.isDestroyed()) {
+        writeLog('TIMEOUT: página não terminou de carregar após 15 segundos.');
+        telaDiagnostico('O sistema demorou a carregar', 'O servidor respondeu, mas a página não terminou de carregar. O diagnóstico foi registado automaticamente.');
+      }
+    }, 15000);
+  } catch (error) {
+    writeLog(`STARTUP ERROR: ${error.stack || error.message}`);
+    telaDiagnostico('Não foi possível iniciar o sistema', error.message || String(error));
+    dialog.showErrorBox('Controle de Férias RH', `O programa encontrou um problema ao iniciar.\n\n${error.message || error}\n\nO diagnóstico foi guardado em:\n${logFile}`);
+    if (server) server.kill();
+    setTimeout(() => app.quit(), 1000);
+  }
 }
 
 app.whenReady().then(createWindow).catch((error) => {
-  writeLog(`STARTUP ERROR: ${error.stack || error.message}`);
-  dialog.showErrorBox('Controle de Férias RH', `O programa não conseguiu iniciar.\n\n${error.message}\n\nO diagnóstico foi guardado em:\n${logFile}`);
+  writeLog(`READY ERROR: ${error.stack || error.message}`);
+  dialog.showErrorBox('Controle de Férias RH', `Erro de arranque.\n\n${error.message || error}`);
   if (server) server.kill();
   app.quit();
 });
