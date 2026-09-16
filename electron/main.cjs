@@ -65,8 +65,9 @@ async function waitForServer(url, attempts = 60) {
   let lastError = '';
   for (let i = 0; i < attempts; i += 1) {
     try {
-      const response = await fetch(url);
-      if (response.ok || response.status < 500) return;
+      const response = await fetch(url, { redirect: 'manual' });
+      writeLog(`Teste do servidor: ${response.status} ${url}`);
+      if (response.status >= 200 && response.status < 500) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
       lastError = error.message;
@@ -78,7 +79,7 @@ async function waitForServer(url, attempts = 60) {
 
 async function createWindow() {
   startServer();
-  await waitForServer('http://127.0.0.1:3000');
+  await waitForServer('http://127.0.0.1:3000/login');
 
   const win = new BrowserWindow({
     width: 1400,
@@ -86,17 +87,25 @@ async function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     autoHideMenuBar: true,
+    show: true,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false
     }
   });
 
+  win.webContents.on('did-finish-load', () => writeLog(`Página carregada: ${win.webContents.getURL()}`));
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    writeLog(`FALHA AO CARREGAR: code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
+    const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><title>Controle de Férias RH</title><style>body{font-family:Arial,sans-serif;background:#f4f7f5;margin:0;padding:60px;color:#111}.box{max-width:760px;margin:auto;background:white;border-radius:16px;padding:32px;box-shadow:0 8px 30px #0001}h1{margin-top:0}code{word-break:break-all;background:#eee;padding:3px 6px;border-radius:5px}.muted{color:#555}</style></head><body><div class="box"><h1>O sistema não conseguiu carregar</h1><p>O servidor local iniciou, mas a janela não conseguiu carregar a aplicação.</p><p><strong>Erro:</strong> ${String(errorDescription).replaceAll('&','&amp;').replaceAll('<','&lt;')}</p><p class="muted">Abra novamente o programa. Se o problema continuar, o diagnóstico está guardado em:</p><p><code>${logFile}</code></p></div></body></html>`;
+    win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+  });
+
   win.webContents.on('render-process-gone', (_event, details) => {
     writeLog(`RENDERER GONE: ${details.reason}`);
   });
 
-  await win.loadURL('http://127.0.0.1:3000');
+  await win.loadURL('http://127.0.0.1:3000/login');
 }
 
 app.whenReady().then(createWindow).catch((error) => {
