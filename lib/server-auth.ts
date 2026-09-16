@@ -24,39 +24,15 @@ function hashPassword(password:string){const salt=randomUUID().replaceAll('-',''
 function verifyPassword(password:string,stored:string){try{const[,salt,hash]=stored.split(':');if(!salt||!hash)return false;const actual=scryptSync(password,salt,64).toString('hex');const a=Buffer.from(actual,'hex'),b=Buffer.from(hash,'hex');return a.length===b.length&&timingSafeEqual(a,b);}catch{return false;}}
 
 async function garantirUtilizadoresIniciais(){
- const contas=[
-  {login:process.env.ADMIN_USER_ID||'',nome:'Administrador',papel:'Administrador' as const,password:process.env.ADMIN_PASSWORD||''},
-  {login:process.env.RH_USER_ID||'',nome:'Responsável RH',papel:'RH' as const,password:process.env.RH_PASSWORD||''},
-  {login:process.env.OUTRO_USER_ID||'',nome:'Outro utilizador',papel:'Outro' as const,password:process.env.OUTRO_PASSWORD||''},
- ];
+ const contas=[{login:process.env.ADMIN_USER_ID||'',nome:'Administrador',papel:'Administrador' as const,password:process.env.ADMIN_PASSWORD||''},{login:process.env.RH_USER_ID||'',nome:'Responsável RH',papel:'RH' as const,password:process.env.RH_PASSWORD||''},{login:process.env.OUTRO_USER_ID||'',nome:'Outro utilizador',papel:'Outro' as const,password:process.env.OUTRO_PASSWORD||''}];
  if(contas.some(c=>!c.login.trim()||!c.password)) return;
  const existentes=await dbQuery<{total:number}>('select count(*) as total from utilizadores');
- if(Number(existentes.rows[0]?.total||0)>0) return;
- await withTransaction(async client=>{
-  for(const conta of contas){
-   await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,versao,atualizado_em) values($1,$2,$3,$4,$5,1,1,CURRENT_TIMESTAMP)',[randomUUID(),conta.login.trim(),conta.nome,conta.papel,hashPassword(conta.password)]);
-  }
- });
+ if(Number(existentes.rows[0]?.total||0)>0)return;
+ await withTransaction(async client=>{for(const conta of contas){await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,versao,atualizado_em) values($1,$2,$3,$4,$5,1,1,CURRENT_TIMESTAMP) on conflict(login,papel) do nothing',[randomUUID(),conta.login.trim(),conta.nome,conta.papel,hashPassword(conta.password)]);}});
 }
-
 export async function utilizadoresConfigurados(){const result=await dbQuery<{total:number}>('select count(*) as total from utilizadores');return Number(result.rows[0]?.total||0)>0;}
-
-export async function criarConfiguracaoInicial(contas:Array<{login:string;nome:string;papel:Papel;password:string}>){
- if(contas.length!==3) throw new Error('CONFIGURACAO_INVALIDA');
- const papeis=new Set(contas.map(c=>c.papel));
- if(papeis.size!==3||!papeis.has('Administrador')||!papeis.has('RH')||!papeis.has('Outro')) throw new Error('CONFIGURACAO_INVALIDA');
- if(contas.some(c=>!c.login.trim()||c.password.length<4)) throw new Error('DADOS_INVALIDOS');
- const existentes=await dbQuery<{total:number}>('select count(*) as total from utilizadores');
- if(Number(existentes.rows[0]?.total||0)>0) throw new Error('JA_CONFIGURADO');
- await withTransaction(async client=>{for(const conta of contas){await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,versao,atualizado_em) values($1,$2,$3,$4,$5,1,1,CURRENT_TIMESTAMP)',[randomUUID(),conta.login.trim(),conta.nome.trim()||conta.login.trim(),conta.papel,hashPassword(conta.password)]);}});
-}
-
-export async function autenticar(id:string,password:string){
- await garantirUtilizadoresIniciais();
- const login=id.trim().toLowerCase();
- const result=await dbQuery<{id:string;login:string;nome:string;papel:Papel;password_hash:string;ativo:boolean}>('select id,login,nome,papel,password_hash,ativo from utilizadores where lower(login)=lower($1) and ativo=true',[login]);
- return result.rows.find(c=>verifyPassword(password,c.password_hash))||null;
-}
+export async function criarConfiguracaoInicial(contas:Array<{login:string;nome:string;papel:Papel;password:string}>){if(contas.length!==3)throw new Error('CONFIGURACAO_INVALIDA');const papeis=new Set(contas.map(c=>c.papel));if(papeis.size!==3||!papeis.has('Administrador')||!papeis.has('RH')||!papeis.has('Outro'))throw new Error('CONFIGURACAO_INVALIDA');if(contas.some(c=>!c.login.trim()||c.password.length<4))throw new Error('DADOS_INVALIDOS');const existentes=await dbQuery<{total:number}>('select count(*) as total from utilizadores');if(Number(existentes.rows[0]?.total||0)>0)throw new Error('JA_CONFIGURADO');await withTransaction(async client=>{for(const conta of contas){await client.query('insert into utilizadores(id,login,nome,papel,password_hash,ativo,versao,atualizado_em) values($1,$2,$3,$4,$5,1,1,CURRENT_TIMESTAMP)',[randomUUID(),conta.login.trim(),conta.nome.trim()||conta.login.trim(),conta.papel,hashPassword(conta.password)]);}});}
+export async function autenticar(id:string,password:string){await garantirUtilizadoresIniciais();const login=id.trim().toLowerCase();const result=await dbQuery<{id:string;login:string;nome:string;papel:Papel;password_hash:string;ativo:boolean}>('select id,login,nome,papel,password_hash,ativo from utilizadores where lower(login)=lower($1) and ativo=true',[login]);return result.rows.find(c=>verifyPassword(password,c.password_hash))||null;}
 export async function obterSessaoServidor(){const store=await cookies();const sessao=lerSessao(store.get(SESSION_COOKIE)?.value);if(!sessao)return null;const r=await dbQuery<{id:string;nome:string;papel:Papel;ativo:boolean}>('select id,nome,papel,ativo from utilizadores where id=$1',[sessao.utilizadorId]);if(!r.rows[0]?.ativo)return null;return {...sessao,nome:r.rows[0].nome,papel:r.rows[0].papel};}
 export function temPermissao(papel:Papel,permissao:Permissao){return permissoesPorPapel[papel]?.[permissao]===true;}
 export async function exigirSessao(){const sessao=await obterSessaoServidor();if(!sessao)throw new Error('UNAUTHORIZED');return sessao;}
