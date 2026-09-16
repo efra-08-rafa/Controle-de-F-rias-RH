@@ -4,8 +4,6 @@ export type FuncionarioFerias = {
   diasUtilizados?: number; inicioFerias: string; fimFerias: string; historico?: HistoricoFerias[];
 };
 
-export const STORAGE_FERIAS = 'controle-ferias-rh-funcionarios';
-
 export function dataLocal(s: string) { return s ? new Date(`${s}T00:00:00`) : null; }
 
 export function diasDoHistorico(f: FuncionarioFerias) {
@@ -34,7 +32,7 @@ export function diasDireitoNoAno(f: FuncionarioFerias, ano: number) {
   if (f.tipoContrato === 'Contratado') return mesesDeContratoNoAno(f, ano);
   const anoAdmissao = inicio.getFullYear();
   if (ano < anoAdmissao) return 0;
-  return ano === anoAdmissao ? 12 : 30;
+  return 30;
 }
 
 export function diasHistoricoNoAno(f: FuncionarioFerias, ano: number) {
