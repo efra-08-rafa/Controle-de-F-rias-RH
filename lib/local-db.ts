@@ -9,6 +9,12 @@ let db: Database.Database | undefined;
 function getPath() { return process.env.LOCAL_DATABASE_PATH || path.join(process.cwd(), 'data', 'controle-ferias.sqlite'); }
 function schemaPath() { return path.join(process.cwd(), 'database', 'sqlite-schema.sql'); }
 
+function garantirColunas(database: Database.Database) {
+  const colunas = database.prepare('pragma table_info(departamentos)').all() as Array<{ name: string }>;
+  if (!colunas.some((c) => c.name === 'versao')) database.exec('alter table departamentos add column versao integer not null default 1');
+  database.exec("update departamentos set versao=1 where versao is null or versao<1");
+}
+
 function migrarIdsDepartamentos(database: Database.Database) {
   const mapa: Record<string,string> = {
     'dep-administracao':'00000000-0000-4000-8000-000000000001',
@@ -40,6 +46,7 @@ export function getLocalDb() {
     db = new Database(filename);
     db.pragma('foreign_keys = ON');
     db.exec(fs.readFileSync(schemaPath(), 'utf8'));
+    garantirColunas(db);
     migrarIdsDepartamentos(db);
   }
   return db;
