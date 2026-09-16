@@ -1,4 +1,4 @@
-name: Windows Installer
+name: Windows Portable
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  build-windows-installer:
+  build-windows-portable:
     runs-on: windows-latest
     env:
       DATABASE_MODE: local
@@ -61,19 +61,25 @@ jobs:
           if (-not $module) { throw "Módulo nativo better-sqlite3 não foi encontrado." }
           Write-Host "better-sqlite3 nativo preparado para Electron: $($module.FullName)"
           Write-Host "TAMANHO: $([math]::Round($module.Length / 1KB, 2)) KB"
-      - name: Build Windows installer
-        run: npx electron-builder --win nsis --publish never
-      - name: Verify installer exists
+      - name: Build Windows portable folder
+        run: npx electron-builder --win dir --publish never
+      - name: Verify portable application
         shell: pwsh
         run: |
-          $installer = Get-ChildItem "dist/Controle-de-Ferias-RH-Setup-*.exe" -File | Select-Object -First 1
-          if (-not $installer) { throw "Instalador Windows não foi criado." }
-          Write-Host "INSTALADOR VALIDADO: $($installer.FullName)"
-          Write-Host "TAMANHO: $([math]::Round($installer.Length / 1MB, 2)) MB"
-      - name: Upload Windows installer
+          $appDir = "dist/win-unpacked"
+          $exe = Get-ChildItem "$appDir/*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not (Test-Path $appDir)) { throw "Pasta portátil não foi criada: $appDir" }
+          if (-not $exe) { throw "Executável da aplicação não foi encontrado dentro da pasta portátil." }
+          $resources = Join-Path $appDir "resources/app"
+          if (-not (Test-Path (Join-Path $resources "server.js"))) { throw "server.js não foi incluído na aplicação portátil." }
+          if (-not (Test-Path (Join-Path $resources "database/sqlite-schema.sql"))) { throw "Schema SQLite não foi incluído na aplicação portátil." }
+          Write-Host "APLICAÇÃO PORTÁTIL VALIDADA: $($exe.FullName)"
+          Write-Host "TAMANHO DO EXECUTÁVEL: $([math]::Round($exe.Length / 1MB, 2)) MB"
+          Write-Host "PASTA: $appDir"
+      - name: Upload portable folder
         uses: actions/upload-artifact@v4
         with:
-          name: Controle-de-Ferias-RH-Windows
-          path: dist/Controle-de-Ferias-RH-Setup-*.exe
+          name: Controle-de-Ferias-RH-Windows-Portable
+          path: dist/win-unpacked
           if-no-files-found: error
           retention-days: 14
