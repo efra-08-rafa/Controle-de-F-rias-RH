@@ -1,9 +1,12 @@
 import 'server-only';
 
 import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg';
+import fs from 'node:fs';
+import path from 'node:path';
 import { getLocalDb } from './local-db';
 
 let pool: Pool | undefined;
+let postgresInit: Promise<void> | undefined;
 
 type DbResult<T> = { rows: T[]; rowCount: number };
 export type DbClient = { query: <T extends QueryResultRow = QueryResultRow>(sql: string, values?: unknown[]) => Promise<DbResult<T>> };
@@ -11,18 +14,13 @@ type LocalResult<T> = DbResult<T>;
 
 function modoLocal() { return (process.env.DATABASE_MODE || 'local').toLowerCase() === 'local'; }
 function getDatabaseUrl() { const value = process.env.DATABASE_URL; if (!value) throw new Error('DATABASE_URL não configurada no ambiente do servidor.'); return value; }
+function schemaPostgres() { return path.join(process.cwd(), 'database', 'schema.sql'); }
 
-// PostgreSQL usa $1, $2... e permite reutilizar o mesmo parâmetro.
-// No SQLite usamos '?' simples e reconstruímos a lista de valores na mesma
-// ordem das ocorrências. Assim $7,$7 recebe exatamente dois valores, ambos
-// vindos de values[6], sem gerar o erro "Too many parameter values".
 function adaptarSqlite(sql: string, values: unknown[]) {
   const boundValues: unknown[] = [];
   const adaptedSql = sql.replace(/\$(\d+)/g, (_match, indexText: string) => {
     const index = Number(indexText);
-    if (!Number.isInteger(index) || index < 1 || index > values.length) {
-      throw new Error(`Parâmetro SQL inválido: $${indexText}`);
-    }
+    if (!Number.isInteger(index) || index < 1 || index > values.length) throw new Error(`Parâmetro SQL inválido: $${indexText}`);
     boundValues.push(values[index - 1]);
     return '?';
   });
@@ -45,6 +43,20 @@ function localQuery<T extends QueryResultRow = QueryResultRow>(sql: string, valu
   return { rows: [], rowCount: result.changes };
 }
 
+async function inicializarPostgres() {
+  if (modoLocal()) return;
+  if (!postgresInit) {
+    postgresInit = (async () => {
+      const file = schemaPostgres();
+      if (!fs.existsSync(file)) throw new Error(`Schema PostgreSQL não encontrado em: ${file}`);
+      const sql = fs.readFileSync(file, 'utf8');
+      if (!sql.trim()) throw new Error('Schema PostgreSQL vazio.');
+      await (getDb() as Pool).query(sql);
+    })().catch(error => { postgresInit = undefined; throw error; });
+  }
+  await postgresInit;
+}
+
 export function getDb() {
   if (modoLocal()) return getLocalDb();
   if (!pool) pool = new Pool({ connectionString: getDatabaseUrl(), max: 10, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false } });
@@ -53,16 +65,12 @@ export function getDb() {
 
 export async function dbQuery<T extends QueryResultRow = QueryResultRow>(text: string, values: unknown[] = []): Promise<QueryResult<T>> {
   if (modoLocal()) return localQuery<T>(text, values) as unknown as QueryResult<T>;
+  await inicializarPostgres();
   return (getDb() as Pool).query<T>(text, values);
 }
 
-function localClient(): DbClient {
-  return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => localQuery<T>(sql, values) };
-}
-
-function postgresClient(client: PoolClient): DbClient {
-  return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => { const result = await client.query<T>(sql, values); return { rows: result.rows, rowCount: result.rowCount ?? 0 }; } };
-}
+function localClient(): DbClient { return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => localQuery<T>(sql, values) }; }
+function postgresClient(client: PoolClient): DbClient { return { query: async <T extends QueryResultRow = QueryResultRow>(sql: string, values: unknown[] = []) => { const result = await client.query<T>(sql, values); return { rows: result.rows, rowCount: result.rowCount ?? 0 }; } }; }
 
 export async function withTransaction<T>(fn: (client: DbClient) => Promise<T>) {
   if (modoLocal()) {
@@ -70,6 +78,7 @@ export async function withTransaction<T>(fn: (client: DbClient) => Promise<T>) {
     try { const result = await fn(localClient()); database.exec('COMMIT'); return result; }
     catch (error) { database.exec('ROLLBACK'); throw error; }
   }
+  await inicializarPostgres();
   const client = await (getDb() as Pool).connect();
   try { await client.query('BEGIN'); const result = await fn(postgresClient(client)); await client.query('COMMIT'); return result; }
   catch (error) { await client.query('ROLLBACK'); throw error; }
