@@ -32,12 +32,25 @@ jobs:
         shell: pwsh
         run: |
           $p = Start-Process -FilePath "npm.cmd" -ArgumentList "run","start" -PassThru -WindowStyle Hidden
+          Set-Content -Path "$env:RUNNER_TEMP\controle-ferias-server.pid" -Value $p.Id
           for ($i=0; $i -lt 30; $i++) {
             try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/login | Out-Null; break } catch { Start-Sleep -Seconds 2 }
             if ($i -eq 29) { throw "Servidor não iniciou." }
           }
       - name: API smoke tests
         run: npm run test:api
+      - name: Stop application before native rebuild
+        if: always()
+        shell: pwsh
+        run: |
+          $pidFile = "$env:RUNNER_TEMP\controle-ferias-server.pid"
+          if (Test-Path $pidFile) {
+            $serverPid = [int](Get-Content $pidFile | Select-Object -First 1)
+            Get-Process -Id $serverPid -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+          Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Get-Process npm -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
       - name: Rebuild better-sqlite3 for Electron
         shell: pwsh
         run: npx --yes @electron/rebuild@4.0.1 -f -w better-sqlite3
