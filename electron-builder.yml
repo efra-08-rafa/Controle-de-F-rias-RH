@@ -10,8 +10,6 @@ extraResources:
     to: app
   - from: .next/static
     to: app/.next/static
-  - from: node_modules/next
-    to: app/node_modules/next
 win:
   target:
     - nsis
