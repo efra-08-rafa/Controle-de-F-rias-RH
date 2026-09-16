@@ -7,11 +7,12 @@ on:
     branches: [main]
 
 jobs:
-  build:
+  build-and-api:
     runs-on: ubuntu-latest
     env:
       DATABASE_MODE: local
       LOCAL_DATABASE_PATH: ./data/ci.sqlite
+      SESSION_SECRET: ci-session-secret-for-automated-tests-with-more-than-32-characters
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,3 +24,16 @@ jobs:
         run: npm install
       - name: Build
         run: npm run build
+      - name: Verify standalone
+        run: npm run verify:standalone
+      - name: Start application
+        run: |
+          npm run start > /tmp/controle-ferias-rh.log 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:3000/login >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          cat /tmp/controle-ferias-rh.log
+          exit 1
+      - name: API smoke tests
+        run: npm run test:api
