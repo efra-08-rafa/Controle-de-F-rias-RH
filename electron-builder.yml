@@ -8,6 +8,8 @@ files:
 extraResources:
   - from: .next/standalone
     to: app
+  - from: .next/static
+    to: app/.next/static
 win:
   target:
     - nsis
