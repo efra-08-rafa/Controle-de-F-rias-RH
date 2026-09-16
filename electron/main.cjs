@@ -119,6 +119,9 @@ async function createWindow() {
     }
   });
 
+  // Inicializa o caminho do diagnóstico antes de qualquer mensagem de arranque.
+  logFile = path.join(app.getPath('userData'), 'logs', 'app.log');
+
   win.webContents.on('did-start-loading', () => writeLog('Navegação iniciada.'));
   win.webContents.on('dom-ready', () => writeLog(`DOM pronto: ${win.webContents.getURL()}`));
   win.webContents.on('did-finish-load', () => {
