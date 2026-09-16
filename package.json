@@ -12,7 +12,7 @@
     "electron:start": "electron .",
     "test:api": "node scripts/api-smoke.cjs",
     "test": "npm run build && npm run verify:standalone",
-    "dist:win": "npm run build && npm run verify:standalone && electron-builder --win nsis"
+    "dist:win": "npm run build && npm run verify:standalone && electron-builder --win dir"
   },
   "dependencies": {
     "better-sqlite3": "^12.4.1",
