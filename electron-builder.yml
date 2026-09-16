@@ -8,8 +8,6 @@ files:
 extraResources:
   - from: .next/standalone
     to: app
-  - from: installer-runtime/node
-    to: node
 win:
   target:
     - nsis
