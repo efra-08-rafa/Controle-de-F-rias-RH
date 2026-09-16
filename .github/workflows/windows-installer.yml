@@ -2,11 +2,9 @@ name: Windows Installer
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-windows-installer:
@@ -14,45 +12,39 @@ jobs:
     env:
       DATABASE_MODE: local
       LOCAL_DATABASE_PATH: ./data/ci.sqlite
+      SESSION_SECRET: ci-session-secret-for-automated-tests-with-more-than-32-characters
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-
       - name: Install dependencies
         run: npm install
-
-      - name: Build Next.js
+      - name: Build application
         run: npm run build
-
-      - name: Prepare standalone application
+      - name: Verify standalone
+        run: npm run verify:standalone
+      - name: Start application
         shell: pwsh
         run: |
-          if (Test-Path .next/standalone/.next/static) { Remove-Item -Recurse -Force .next/standalone/.next/static }
-          New-Item -ItemType Directory -Force .next/standalone/.next/static | Out-Null
-          Copy-Item -Recurse -Force .next/static/* .next/standalone/.next/static/
-
-          if (Test-Path .next/standalone/public) { Remove-Item -Recurse -Force .next/standalone/public }
-          if (Test-Path public) { Copy-Item -Recurse -Force public .next/standalone/public }
-
-          if (Test-Path .next/standalone/database) { Remove-Item -Recurse -Force .next/standalone/database }
-          Copy-Item -Recurse -Force database .next/standalone/database
-
+          $p = Start-Process -FilePath "npm.cmd" -ArgumentList "run","start" -PassThru -WindowStyle Hidden
+          for ($i=0; $i -lt 30; $i++) {
+            try { Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/login | Out-Null; break } catch { Start-Sleep -Seconds 2 }
+            if ($i -eq 29) { throw "Servidor não iniciou." }
+          }
+      - name: API smoke tests
+        run: npm run test:api
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
-
       - name: Verify installer exists
         shell: pwsh
         run: |
           $installer = Get-ChildItem "dist/Controle-de-Ferias-RH-Setup-*.exe" -File | Select-Object -First 1
           if (-not $installer) { throw "Instalador Windows não foi criado." }
-          Write-Host "INSTALADOR CRIADO: $($installer.FullName)"
+          Write-Host "INSTALADOR VALIDADO: $($installer.FullName)"
           Write-Host "TAMANHO: $([math]::Round($installer.Length / 1MB, 2)) MB"
-
       - name: Upload Windows installer
         uses: actions/upload-artifact@v4
         with:
@@ -60,16 +52,3 @@ jobs:
           path: dist/Controle-de-Ferias-RH-Setup-*.exe
           if-no-files-found: error
           retention-days: 14
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v0.1.0-build.${{ github.run_number }}
-          name: Controle de Férias RH v0.1.0 (build ${{ github.run_number }})
-          body: |
-            Instalador Windows do Controle de Férias RH.
-
-            Inclui o aplicativo desktop com banco de dados local SQLite.
-          files: dist/Controle-de-Ferias-RH-Setup-*.exe
-          generate_release_notes: true
-          make_latest: true
