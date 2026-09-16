@@ -5,16 +5,7 @@ const fs = require('node:fs');
 const { randomBytes } = require('node:crypto');
 
 let server;
-let logFile;
 let win;
-let paginaCarregada = false;
-
-function writeLog(message) {
-  try {
-    fs.mkdirSync(path.dirname(logFile), { recursive: true });
-    fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${message}\n`, 'utf8');
-  } catch {}
-}
 
 function getSessionSecret() {
   const secretFile = path.join(app.getPath('userData'), 'session-secret');
@@ -44,27 +35,35 @@ function encontrarServidor() {
     if (fs.existsSync(candidato)) return candidato;
   }
 
-  throw new Error(`Servidor Next não encontrado. Caminhos verificados:\n${candidatos.join('\n')}`);
+  throw new Error('Servidor interno do sistema não foi encontrado.');
 }
 
-function telaDiagnostico(titulo, mensagem) {
+function telaInicial() {
   if (!win || win.isDestroyed()) return;
-  const esc = (valor) => String(valor).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-  const html = `<!doctype html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(titulo)}</title><style>body{font-family:Arial,sans-serif;background:#f4f8f2;margin:0;padding:48px;color:#111}.box{max-width:820px;margin:auto;background:#fff;border-radius:16px;padding:32px;box-shadow:0 10px 35px #0002;border-top:6px solid #245c3a}h1{margin:0 0 14px;color:#245c3a}p{line-height:1.55}code{display:block;word-break:break-all;background:#eef2ed;padding:12px;border-radius:8px;margin-top:8px}</style></head><body><div class="box"><h1>${esc(titulo)}</h1><p>${esc(mensagem)}</p><p>O diagnóstico foi guardado neste ficheiro:</p><code>${esc(logFile)}</code><p>Pode fechar esta janela e abrir novamente o programa.</p></div></body></html>`;
+  const html = `<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Controle de Férias RH</title>
+<style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f8f2;font-family:Arial,sans-serif;color:#111}
+.box{text-align:center;background:#fff;border-radius:20px;padding:42px 50px;box-shadow:0 16px 50px #00000014}
+.logo{font-size:42px;margin-bottom:12px}.title{font-size:24px;font-weight:700}.text{margin-top:10px;color:#555}.loader{width:34px;height:34px;margin:24px auto 0;border:4px solid #dfe9df;border-top-color:#245c3a;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body><div class="box"><div class="logo">🌿</div><div class="title">Controle de Férias RH</div><div class="text">A preparar o sistema...</div><div class="loader"></div></div></body>
+</html>`;
   win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`).catch(() => {});
 }
 
 function startServer() {
   const serverFile = encontrarServidor();
   const appDir = path.dirname(serverFile);
-  const userDataDir = app.getPath('userData');
-  logFile = path.join(userDataDir, 'logs', 'app.log');
-  const dataDir = path.join(userDataDir, 'data');
+  const dataDir = path.join(app.getPath('userData'), 'data');
 
   fs.mkdirSync(dataDir, { recursive: true });
-  writeLog(`Iniciando aplicativo. packaged=${app.isPackaged}`);
-  writeLog(`Server=${serverFile}`);
-  writeLog(`Electron=${process.execPath}`);
 
   server = spawn(process.execPath, [serverFile], {
     cwd: appDir,
@@ -79,13 +78,8 @@ function startServer() {
       SESSION_SECRET: getSessionSecret()
     },
     windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: 'ignore'
   });
-
-  server.stdout.on('data', (data) => writeLog(`SERVER: ${data.toString().trim()}`));
-  server.stderr.on('data', (data) => writeLog(`SERVER ERROR: ${data.toString().trim()}`));
-  server.on('error', (error) => writeLog(`PROCESS ERROR: ${error.stack || error.message}`));
-  server.on('exit', (code, signal) => writeLog(`SERVER EXIT: code=${code} signal=${signal}`));
 }
 
 async function waitForServer(url, attempts = 60) {
@@ -93,7 +87,6 @@ async function waitForServer(url, attempts = 60) {
   for (let i = 0; i < attempts; i += 1) {
     try {
       const response = await fetch(url, { redirect: 'manual' });
-      writeLog(`Teste do servidor: ${response.status} ${url}`);
       if (response.status >= 200 && response.status < 500) return;
       lastError = `HTTP ${response.status}`;
     } catch (error) {
@@ -101,7 +94,7 @@ async function waitForServer(url, attempts = 60) {
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  throw new Error(`Servidor local não iniciou a tempo. ${lastError}`);
+  throw new Error(`O servidor interno não iniciou a tempo${lastError ? ` (${lastError})` : ''}.`);
 }
 
 async function createWindow() {
@@ -119,52 +112,24 @@ async function createWindow() {
     }
   });
 
-  // Inicializa o caminho do diagnóstico antes de qualquer mensagem de arranque.
-  logFile = path.join(app.getPath('userData'), 'logs', 'app.log');
-
-  win.webContents.on('did-start-loading', () => writeLog('Navegação iniciada.'));
-  win.webContents.on('dom-ready', () => writeLog(`DOM pronto: ${win.webContents.getURL()}`));
-  win.webContents.on('did-finish-load', () => {
-    paginaCarregada = true;
-    writeLog(`Página carregada: ${win.webContents.getURL()}`);
-  });
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
-    writeLog(`FALHA AO CARREGAR: code=${errorCode} desc=${errorDescription} url=${validatedURL}`);
-    if (validatedURL.startsWith('http://127.0.0.1:3000')) {
-      telaDiagnostico('Falha ao carregar o sistema', `O servidor iniciou, mas a aplicação não conseguiu carregar. Erro: ${errorDescription} (código ${errorCode}).`);
-    }
-  });
-  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    writeLog(`CONSOLE: level=${level} line=${line} source=${sourceId} message=${message}`);
-  });
-  win.webContents.on('render-process-gone', (_event, details) => {
-    writeLog(`RENDERER GONE: ${details.reason}`);
-    telaDiagnostico('A janela encontrou um erro', `O processo visual do aplicativo foi encerrado (${details.reason}).`);
-  });
+  telaInicial();
 
   try {
-    telaDiagnostico('A iniciar o Controle de Férias RH', 'A preparar o sistema...');
     startServer();
     await waitForServer('http://127.0.0.1:3000/login');
-    writeLog('Servidor confirmado. Abrindo /login.');
     await win.loadURL('http://127.0.0.1:3000/login');
-    setTimeout(() => {
-      if (!paginaCarregada && win && !win.isDestroyed()) {
-        writeLog('TIMEOUT: página não terminou de carregar após 15 segundos.');
-        telaDiagnostico('O sistema demorou a carregar', 'O servidor respondeu, mas a página não terminou de carregar. O diagnóstico foi registado automaticamente.');
-      }
-    }, 15000);
   } catch (error) {
-    writeLog(`STARTUP ERROR: ${error.stack || error.message}`);
-    telaDiagnostico('Não foi possível iniciar o sistema', error.message || String(error));
-    dialog.showErrorBox('Controle de Férias RH', `O programa encontrou um problema ao iniciar.\n\n${error.message || error}\n\nO diagnóstico foi guardado em:\n${logFile}`);
+    dialog.showErrorBox(
+      'Controle de Férias RH',
+      `Não foi possível iniciar o sistema.\n\n${error.message || String(error)}`
+    );
     if (server) server.kill();
+    app.quit();
   }
 }
 
 app.whenReady().then(createWindow).catch((error) => {
-  writeLog(`READY ERROR: ${error.stack || error.message}`);
-  dialog.showErrorBox('Controle de Férias RH', `Erro de arranque.\n\n${error.message || error}`);
+  dialog.showErrorBox('Controle de Férias RH', `Erro ao iniciar o sistema.\n\n${error.message || String(error)}`);
   if (server) server.kill();
   app.quit();
 });
