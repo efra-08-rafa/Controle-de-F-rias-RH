@@ -29,22 +29,21 @@ function getSessionSecret() {
 
 function startServer() {
   const appDir = path.join(process.resourcesPath, 'app');
-  const nodeExe = path.join(process.resourcesPath, 'node', process.platform === 'win32' ? 'node.exe' : 'node');
   const serverFile = path.join(appDir, 'server.js');
   const userDataDir = app.getPath('userData');
   logFile = path.join(userDataDir, 'logs', 'app.log');
 
+  fs.mkdirSync(path.join(userDataDir, 'data'), { recursive: true });
   writeLog(`Iniciando aplicativo. appDir=${appDir}`);
-  writeLog(`Node runtime=${nodeExe}`);
   writeLog(`Server=${serverFile}`);
 
-  if (!fs.existsSync(nodeExe)) throw new Error(`Node runtime não encontrado: ${nodeExe}`);
   if (!fs.existsSync(serverFile)) throw new Error(`Servidor Next não encontrado: ${serverFile}`);
 
-  server = spawn(nodeExe, [serverFile], {
+  server = spawn(process.execPath, [serverFile], {
     cwd: appDir,
     env: {
       ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
       NODE_ENV: 'production',
       PORT: '3000',
       HOSTNAME: '127.0.0.1',
