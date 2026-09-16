@@ -2,6 +2,8 @@ name: Windows Installer
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -36,6 +38,16 @@ jobs:
           }
       - name: API smoke tests
         run: npm run test:api
+      - name: Rebuild better-sqlite3 for Electron
+        shell: pwsh
+        run: npx --yes @electron/rebuild@4.0.1 -f -w better-sqlite3
+      - name: Verify better-sqlite3 native module
+        shell: pwsh
+        run: |
+          $module = Get-ChildItem "node_modules/better-sqlite3/build/Release/better_sqlite3.node" -File -ErrorAction SilentlyContinue
+          if (-not $module) { throw "Módulo nativo better-sqlite3 não foi encontrado." }
+          Write-Host "better-sqlite3 nativo preparado para Electron: $($module.FullName)"
+          Write-Host "TAMANHO: $([math]::Round($module.Length / 1KB, 2)) KB"
       - name: Build Windows installer
         run: npx electron-builder --win nsis --publish never
       - name: Verify installer exists
