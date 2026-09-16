@@ -12,11 +12,5 @@ extraResources:
     to: app/.next/static
 win:
   target:
-    - nsis
-  artifactName: Controle-de-Ferias-RH-Setup-${version}.${ext}
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
+    - dir
+  executableName: Controle-de-Ferias-RH
